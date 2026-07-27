@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="edu.fjut.mall.payment.mapper.PaymentRefundMapper">
+    <resultMap id="BaseResultMap" type="edu.fjut.mall.payment.entity.PaymentRefund">
+        <id column="id" property="id"/>
+        <result column="order_no" property="orderNo"/>
+        <result column="user_id" property="userId"/>
+        <result column="refund_amount" property="refundAmount"/>
+        <result column="refund_status" property="refundStatus"/>
+        <result column="reason" property="reason"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO payment_refund (id, order_no, user_id, refund_amount, refund_status, reason)
+        VALUES (#{id}, #{orderNo}, #{userId}, #{refundAmount}, #{refundStatus}, #{reason})
+    </insert>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM payment_refund WHERE id = #{id}
+    </select>
+
+    <update id="updateStatus">
+        UPDATE payment_refund SET refund_status = #{refundStatus} WHERE id = #{id}
+    </update>
+</mapper>

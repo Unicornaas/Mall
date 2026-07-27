@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="edu.fjut.mall.inventory.mapper.InventoryLogMapper">
+    <resultMap id="BaseResultMap" type="edu.fjut.mall.inventory.entity.InventoryLog">
+        <id column="id" property="id"/>
+        <result column="sku_id" property="skuId"/>
+        <result column="order_no" property="orderNo"/>
+        <result column="change_type" property="changeType"/>
+        <result column="change_count" property="changeCount"/>
+        <result column="before_stock" property="beforeStock"/>
+        <result column="after_stock" property="afterStock"/>
+        <result column="create_time" property="createTime"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO inventory_log (id, sku_id, order_no, change_type, change_count, before_stock, after_stock)
+        VALUES (#{id}, #{skuId}, #{orderNo}, #{changeType}, #{changeCount}, #{beforeStock}, #{afterStock})
+    </insert>
+
+    <select id="selectBySkuId" resultMap="BaseResultMap">
+        SELECT * FROM inventory_log WHERE sku_id = #{skuId} ORDER BY id DESC
+    </select>
+</mapper>

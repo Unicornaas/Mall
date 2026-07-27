@@ -1,0 +1,22 @@
+package edu.fjut.mall.user.dto;
+
+import lombok.Data;
+
+/**
+ * 修改个人信息请求
+ */
+@Data
+public class UpdateProfileRequest {
+
+    /** 昵称 */
+    private String nickname;
+
+    /** 手机号 */
+    private String phone;
+
+    /** 邮箱 */
+    private String email;
+
+    /** 头像URL */
+    private String avatar;
+}

@@ -1,0 +1,63 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: mall-gateway
+  cloud:
+    nacos:
+      config:
+        import-check:
+          enabled: false
+      discovery:
+        server-addr: localhost:8848
+    gateway:
+      # 全局默认过滤器
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
+      # 路由配置
+      routes:
+        # ========== 用户服务 ==========
+        - id: mall-user
+          uri: lb://mall-user
+          predicates:
+            - Path=/api/user/**,/api/admin/user/**
+        # ========== 商品服务 ==========
+        - id: mall-product
+          uri: lb://mall-product
+          predicates:
+            - Path=/api/product/**,/api/admin/product/**
+        # ========== 订单服务 ==========
+        - id: mall-order
+          uri: lb://mall-order
+          predicates:
+            - Path=/api/order/**
+        # ========== 购物车服务 ==========
+        - id: mall-cart
+          uri: lb://mall-cart
+          predicates:
+            - Path=/api/cart/**
+        # ========== 库存服务 ==========
+        - id: mall-inventory
+          uri: lb://mall-inventory
+          predicates:
+            - Path=/api/inventory/**
+        # ========== 支付服务 ==========
+        - id: mall-payment
+          uri: lb://mall-payment
+          predicates:
+            - Path=/api/payment/**
+
+# ========== 网关自定义配置 ==========
+gateway:
+  auth:
+    # 白名单路径（不需要 Token，逗号分隔）
+    whitelist: /api/user/login,/api/user/register,/api/product/categories,/api/product/categories/**,/api/product/spus/**,/api/product/skus/**
+  rate-limit:
+    # 每秒允许请求数
+    requests-per-second: 20
+
+logging:
+  level:
+    root: INFO
+    edu.fjut.mall.gateway: DEBUG

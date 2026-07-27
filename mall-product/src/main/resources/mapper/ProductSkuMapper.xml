@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="edu.fjut.mall.product.mapper.ProductSkuMapper">
+
+    <resultMap id="BaseResultMap" type="edu.fjut.mall.product.entity.ProductSku">
+        <id column="id" property="id"/>
+        <result column="spu_id" property="spuId"/>
+        <result column="name" property="name"/>
+        <result column="sku_code" property="skuCode"/>
+        <result column="price" property="price"/>
+        <result column="stock" property="stock"/>
+        <result column="images" property="images"/>
+        <result column="specs" property="specs"/>
+        <result column="status" property="status"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <select id="selectBySpuId" resultMap="BaseResultMap">
+        SELECT * FROM product_sku WHERE spu_id = #{spuId} ORDER BY id ASC
+    </select>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT * FROM product_sku WHERE id = #{id}
+    </select>
+
+    <insert id="insert">
+        INSERT INTO product_sku (id, spu_id, name, sku_code, price, stock, images, specs, status)
+        VALUES (#{id}, #{spuId}, #{name}, #{skuCode}, #{price}, #{stock}, #{images}, #{specs}, #{status})
+    </insert>
+
+    <update id="updateById">
+        UPDATE product_sku
+        <set>
+            <if test="name != null">name = #{name},</if>
+            <if test="skuCode != null">sku_code = #{skuCode},</if>
+            <if test="price != null">price = #{price},</if>
+            <if test="stock != null">stock = #{stock},</if>
+            <if test="images != null">images = #{images},</if>
+            <if test="specs != null">specs = #{specs},</if>
+            <if test="status != null">status = #{status},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM product_sku WHERE id = #{id}
+    </delete>
+
+    <update id="deductStock">
+        UPDATE product_sku SET stock = stock - #{count}
+        WHERE id = #{id} AND stock >= #{count}
+    </update>
+</mapper>

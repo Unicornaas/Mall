@@ -1,0 +1,28 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', Arial, sans-serif;
+  background: #f5f7fa;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+/* Element Plus 全局微调 */
+.el-button--primary {
+  --el-button-bg-color: #FF6B35;
+  --el-button-border-color: #FF6B35;
+  --el-button-hover-bg-color: #e55a2b;
+  --el-button-hover-border-color: #e55a2b;
+  --el-button-active-bg-color: #cc4f1f;
+  --el-button-active-border-color: #cc4f1f;
+}
