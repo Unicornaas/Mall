@@ -20,7 +20,9 @@ public class PaymentController {
      * PAY-01: 创建支付单
      */
     @PostMapping("/create")
-    public Result<PaymentVO> create(@Valid @RequestBody CreatePaymentRequest request) {
+    public Result<PaymentVO> create(@Valid @RequestBody CreatePaymentRequest request,
+                                    @RequestHeader("X-User-Id") Long userId) {
+        request.setUserId(userId);
         return Result.success(paymentService.create(request));
     }
 
@@ -28,31 +30,46 @@ public class PaymentController {
      * PAY-02: 模拟支付
      */
     @PutMapping("/pay/{orderNo}")
-    public Result<PaymentVO> pay(@PathVariable String orderNo) {
-        return Result.success(paymentService.pay(orderNo));
+    public Result<PaymentVO> pay(@PathVariable String orderNo,
+                                 @RequestHeader("X-User-Id") Long userId) {
+        return Result.success(paymentService.pay(orderNo, userId));
     }
 
     /**
      * PAY-03: 支付状态查询
      */
     @GetMapping("/status/{orderNo}")
-    public Result<PaymentVO> queryStatus(@PathVariable String orderNo) {
-        return Result.success(paymentService.queryStatus(orderNo));
+    public Result<PaymentVO> queryStatus(@PathVariable String orderNo,
+                                         @RequestHeader("X-User-Id") Long userId) {
+        return Result.success(paymentService.queryStatus(orderNo, userId));
     }
 
     /**
      * PAY-04: 申请退款
      */
     @PostMapping("/refund")
-    public Result<RefundVO> refund(@Valid @RequestBody RefundRequest request) {
+    public Result<RefundVO> refund(@Valid @RequestBody RefundRequest request,
+                                   @RequestHeader("X-User-Id") Long userId) {
+        request.setUserId(userId);
         return Result.success(paymentService.refund(request));
+    }
+
+    /** PAY-04-1: 查询当前用户订单的退款申请状态 */
+    @GetMapping("/refund/status/{orderNo}")
+    public Result<RefundVO> refundStatus(@PathVariable String orderNo,
+                                         @RequestHeader("X-User-Id") Long userId) {
+        return Result.success(paymentService.queryRefundStatus(orderNo, userId));
     }
 
     /**
      * PAY-05: 退款处理
      */
     @PutMapping("/refund/{refundId}/process")
-    public Result<RefundVO> processRefund(@PathVariable Long refundId, @RequestParam Integer refundStatus) {
+    public Result<RefundVO> processRefund(@PathVariable Long refundId, @RequestParam Integer refundStatus,
+                                          @RequestHeader("X-User-Role") Integer role) {
+        if (role == null || role != 2) {
+            throw new edu.fjut.mall.common.exception.BusinessException(403, "仅管理员可以处理退款");
+        }
         return Result.success(paymentService.processRefund(refundId, refundStatus));
     }
 
@@ -61,7 +78,11 @@ public class PaymentController {
      */
     @GetMapping("/page")
     public Result<List<PaymentVO>> page(@RequestParam(defaultValue = "1") Integer pageNum,
-                                        @RequestParam(defaultValue = "20") Integer pageSize) {
+                                        @RequestParam(defaultValue = "20") Integer pageSize,
+                                        @RequestHeader("X-User-Role") Integer role) {
+        if (role == null || role != 2) {
+            throw new edu.fjut.mall.common.exception.BusinessException(403, "仅管理员可以查看支付记录");
+        }
         return Result.success(paymentService.page(pageNum, pageSize));
     }
 }

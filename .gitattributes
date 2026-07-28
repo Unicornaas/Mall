@@ -1,2 +1,7 @@
-/mvnw text eol=lf
-*.cmd text eol=crlf
+# 自动处理所有文本文件：提交时转为 LF，检出时根据系统自动转换
+* text=auto
+
+# 如果你希望特定代码文件在所有平台上都强制使用 LF（如 Shell 脚本、配置等）
+*.sh text eol=lf
+*.js text eol=lf
+*.json text eol=lf

@@ -27,11 +27,19 @@ spring:
           uri: lb://mall-product
           predicates:
             - Path=/api/product/**,/api/admin/product/**
+        - id: mall-seller-product
+          uri: lb://mall-product
+          predicates:
+            - Path=/api/seller/products/**
         # ========== 订单服务 ==========
         - id: mall-order
           uri: lb://mall-order
           predicates:
-            - Path=/api/order/**
+            - Path=/api/order/**,/api/admin/order/**
+        - id: mall-seller-order
+          uri: lb://mall-order
+          predicates:
+            - Path=/api/seller/orders/**
         # ========== 购物车服务 ==========
         - id: mall-cart
           uri: lb://mall-cart
@@ -41,12 +49,16 @@ spring:
         - id: mall-inventory
           uri: lb://mall-inventory
           predicates:
-            - Path=/api/inventory/**
+            - Path=/api/inventory/**,/api/admin/inventory/**
+        - id: mall-seller-inventory
+          uri: lb://mall-inventory
+          predicates:
+            - Path=/api/seller/inventory/**
         # ========== 支付服务 ==========
         - id: mall-payment
           uri: lb://mall-payment
           predicates:
-            - Path=/api/payment/**
+            - Path=/api/payment/**,/api/admin/payment/**
 
 # ========== 网关自定义配置 ==========
 gateway:

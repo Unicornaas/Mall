@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { login as loginApi, register as registerApi } from '../api/user'
+import { login as loginApi, register as registerApi } from '../modules/user/api/user'
 import router from '../router'
 
 export const useUserStore = defineStore('user', () => {
@@ -16,7 +16,7 @@ export const useUserStore = defineStore('user', () => {
     user.value = res.data.user
     localStorage.setItem('token', res.data.token)
     localStorage.setItem('user', JSON.stringify(res.data.user))
-    router.push('/')
+    router.push(user.value?.role === 2 ? '/admin/dashboard' : user.value?.role === 1 ? '/seller/dashboard' : '/')
     return res
   }
 

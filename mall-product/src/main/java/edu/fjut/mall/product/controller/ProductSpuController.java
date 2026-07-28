@@ -34,22 +34,35 @@ public class ProductSpuController {
 
     /** 新增 SPU */
     @PostMapping
-    public Result<Void> add(@Valid @RequestBody SpuRequest request) {
-        spuService.add(request);
+    public Result<Void> add(@Valid @RequestBody SpuRequest request,
+                            @RequestHeader("X-User-Id") Long userId,
+                            @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
+        spuService.add(request, userId);
         return Result.success("新增成功", null);
     }
 
     /** 修改 SPU */
     @PutMapping("/{id}")
-    public Result<Void> update(@PathVariable Long id, @Valid @RequestBody SpuRequest request) {
+    public Result<Void> update(@PathVariable Long id, @Valid @RequestBody SpuRequest request,
+                               @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         spuService.update(id, request);
         return Result.success("修改成功", null);
     }
 
     /** 上下架 */
     @PutMapping("/{id}/status")
-    public Result<Void> updateStatus(@PathVariable Long id, @RequestParam Integer status) {
+    public Result<Void> updateStatus(@PathVariable Long id, @RequestParam Integer status,
+                                     @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         spuService.updateStatus(id, status);
         return Result.success("操作成功", null);
+    }
+
+    private void requireAdmin(Integer role) {
+        if (role == null || role != 2) {
+            throw new edu.fjut.mall.common.exception.BusinessException(403, "请使用商家端专用接口管理商品");
+        }
     }
 }

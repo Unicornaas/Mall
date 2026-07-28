@@ -18,6 +18,10 @@ public class OrderVO {
     private String receiverPhone;
     private String receiverAddress;
     private String remark;
+    private String shippingCompany;
+    private String trackingNo;
+    private LocalDateTime shipTime;
+    private LocalDateTime receiveTime;
     private LocalDateTime createTime;
     private List<OrderItemVO> items;
 

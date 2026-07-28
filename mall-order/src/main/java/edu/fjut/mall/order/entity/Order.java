@@ -15,4 +15,8 @@ public class Order extends edu.fjut.mall.common.entity.BaseEntity {
     private String receiverPhone;
     private String receiverAddress;
     private String remark;
+    private String shippingCompany;
+    private String trackingNo;
+    private java.time.LocalDateTime shipTime;
+    private java.time.LocalDateTime receiveTime;
 }

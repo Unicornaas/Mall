@@ -36,7 +36,9 @@ public class InventoryController {
      * INV-03: 库存预占（下单时调用）
      */
     @PutMapping("/{skuId}/lock")
-    public Result<Void> lock(@PathVariable Long skuId, @Valid @RequestBody InventoryChangeRequest request) {
+    public Result<Void> lock(@PathVariable Long skuId, @Valid @RequestBody InventoryChangeRequest request,
+                             @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         inventoryService.lock(skuId, request.getQuantity(), request.getOrderNo());
         return Result.success();
     }
@@ -45,7 +47,9 @@ public class InventoryController {
      * INV-04: 库存扣减（支付成功后调用）
      */
     @PutMapping("/{skuId}/deduct")
-    public Result<Void> deduct(@PathVariable Long skuId, @Valid @RequestBody InventoryChangeRequest request) {
+    public Result<Void> deduct(@PathVariable Long skuId, @Valid @RequestBody InventoryChangeRequest request,
+                               @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         inventoryService.deduct(skuId, request.getQuantity(), request.getOrderNo());
         return Result.success();
     }
@@ -54,16 +58,20 @@ public class InventoryController {
      * INV-05: 库存释放（取消订单/超时调用）
      */
     @PutMapping("/{skuId}/release")
-    public Result<Void> release(@PathVariable Long skuId, @Valid @RequestBody InventoryChangeRequest request) {
+    public Result<Void> release(@PathVariable Long skuId, @Valid @RequestBody InventoryChangeRequest request,
+                                @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         inventoryService.release(skuId, request.getQuantity(), request.getOrderNo());
         return Result.success();
     }
 
     /**
-     * INV-06: 入库/增加库存（卖家补货）
+     * INV-06: 入库/增加库存（旧通用接口，仅管理员使用）
      */
     @PutMapping("/{skuId}/add")
-    public Result<Void> add(@PathVariable Long skuId, @Valid @RequestBody InventoryChangeRequest request) {
+    public Result<Void> add(@PathVariable Long skuId, @Valid @RequestBody InventoryChangeRequest request,
+                            @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         inventoryService.add(skuId, request.getQuantity());
         return Result.success();
     }
@@ -72,7 +80,9 @@ public class InventoryController {
      * INV-07: 库存初始化（创建SKU时同步）
      */
     @PostMapping("/init")
-    public Result<Void> init(@Valid @RequestBody InventoryInitRequest request) {
+    public Result<Void> init(@Valid @RequestBody InventoryInitRequest request,
+                             @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         inventoryService.init(request);
         return Result.success();
     }
@@ -81,7 +91,15 @@ public class InventoryController {
      * INV-08: 库存日志查询
      */
     @GetMapping("/log/{skuId}")
-    public Result<List<InventoryLogVO>> queryLog(@PathVariable Long skuId) {
+    public Result<List<InventoryLogVO>> queryLog(@PathVariable Long skuId,
+                                                  @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         return Result.success(inventoryService.queryLog(skuId));
+    }
+
+    private void requireAdmin(Integer role) {
+        if (role == null || role != 2) {
+            throw new edu.fjut.mall.common.exception.BusinessException(403, "仅管理员可以执行库存状态变更");
+        }
     }
 }

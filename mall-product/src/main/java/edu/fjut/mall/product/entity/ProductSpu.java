@@ -10,6 +10,12 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class ProductSpu extends edu.fjut.mall.common.entity.BaseEntity {
 
+    /** 所属商家ID；0 表示历史平台自营商品 */
+    private Long sellerId;
+
+    /** 商品公开展示的店铺名称；由查询关联 shop_t 返回 */
+    private String shopName;
+
     /** 分类ID */
     private Long categoryId;
 

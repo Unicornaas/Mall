@@ -4,16 +4,72 @@ const routes = [
   {
     path: '/login',
     name: 'Login',
-    component: () => import('../views/Login.vue'),
+    component: () => import('../modules/user/views/Login.vue'),
   },
   {
     path: '/register',
     name: 'Register',
-    component: () => import('../views/Register.vue'),
+    component: () => import('../modules/user/views/Register.vue'),
+  },
+  {
+    path: '/admin',
+    component: () => import('../modules/admin/layouts/AdminLayout.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+    children: [
+      {
+        path: '',
+        redirect: '/admin/dashboard',
+      },
+      {
+        path: 'dashboard',
+        name: 'AdminDashboard',
+        component: () => import('../modules/admin/views/AdminDashboard.vue'),
+        meta: { title: '运营概览' },
+      },
+      {
+        path: 'users',
+        name: 'AdminUserList',
+        component: () => import('../modules/admin/views/UserList.vue'),
+        meta: { title: '用户管理' },
+      },
+      {
+        path: 'products',
+        name: 'AdminProductManagement',
+        component: () => import('../modules/admin/views/ProductManagement.vue'),
+        meta: { title: '商品管理' },
+      },
+      {
+        path: 'orders',
+        name: 'AdminOrderManagement',
+        component: () => import('../modules/admin/views/OrderManagement.vue'),
+        meta: { title: '订单管理' },
+      },
+      {
+        path: 'inventory',
+        name: 'AdminInventoryManagement',
+        component: () => import('../modules/admin/views/InventoryManagement.vue'),
+        meta: { title: '库存管理' },
+      },
+      {
+        path: 'payments',
+        name: 'AdminPaymentRefundManagement',
+        component: () => import('../modules/admin/views/PaymentRefundManagement.vue'),
+        meta: { title: '支付与退款' },
+      },
+    ],
+  },
+  {
+    path: '/seller',
+    component: () => import('../modules/seller/layouts/SellerLayout.vue'),
+    meta: { requiresAuth: true, requiresSeller: true },
+    children: [
+      { path: '', redirect: '/seller/dashboard' },
+      { path: 'dashboard', name: 'SellerDashboard', component: () => import('../modules/seller/views/SellerDashboard.vue'), meta: { title: '经营概览' } },
+    ],
   },
   {
     path: '/',
-    component: () => import('../views/Layout.vue'),
+    component: () => import('../modules/user/layouts/UserLayout.vue'),
     meta: { requiresAuth: true },
     children: [
       {
@@ -23,47 +79,47 @@ const routes = [
       {
         path: 'products',
         name: 'ProductList',
-        component: () => import('../views/ProductList.vue'),
+        component: () => import('../modules/user/views/ProductList.vue'),
       },
       {
         path: 'products/:id',
         name: 'ProductDetail',
-        component: () => import('../views/ProductDetail.vue'),
+        component: () => import('../modules/user/views/ProductDetail.vue'),
       },
       {
         path: 'cart',
         name: 'Cart',
-        component: () => import('../views/Cart.vue'),
+        component: () => import('../modules/user/views/Cart.vue'),
       },
       {
         path: 'checkout',
         name: 'Checkout',
-        component: () => import('../views/Checkout.vue'),
+        component: () => import('../modules/user/views/Checkout.vue'),
       },
       {
         path: 'orders',
         name: 'OrderList',
-        component: () => import('../views/OrderList.vue'),
+        component: () => import('../modules/user/views/OrderList.vue'),
       },
       {
         path: 'orders/:id',
         name: 'OrderDetail',
-        component: () => import('../views/OrderDetail.vue'),
+        component: () => import('../modules/user/views/OrderDetail.vue'),
       },
       {
         path: 'payment/:id',
         name: 'Payment',
-        component: () => import('../views/Payment.vue'),
+        component: () => import('../modules/user/views/Payment.vue'),
       },
       {
         path: 'profile',
         name: 'UserProfile',
-        component: () => import('../views/UserProfile.vue'),
+        component: () => import('../modules/user/views/UserProfile.vue'),
       },
       {
         path: 'addresses',
         name: 'AddressList',
-        component: () => import('../views/AddressList.vue'),
+        component: () => import('../modules/user/views/AddressList.vue'),
       },
     ],
   },
@@ -76,10 +132,21 @@ const router = createRouter({
 
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
+  let user = null
+  try {
+    user = JSON.parse(localStorage.getItem('user') || 'null')
+  } catch {
+    localStorage.removeItem('user')
+  }
+
   if (to.matched.some(r => r.meta.requiresAuth) && !token) {
-    next('/login')
+    next({ path: '/login', query: { redirect: to.fullPath } })
+  } else if (to.matched.some(r => r.meta.requiresAdmin) && Number(user?.role) !== 2) {
+    next('/products')
+  } else if (to.matched.some(r => r.meta.requiresSeller) && Number(user?.role) !== 1) {
+    next('/products')
   } else if ((to.path === '/login' || to.path === '/register') && token) {
-    next('/')
+    next(Number(user?.role) === 2 ? '/admin/dashboard' : Number(user?.role) === 1 ? '/seller/dashboard' : '/')
   } else {
     next()
   }

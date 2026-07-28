@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS product_category (
 -- 商品SPU表
 CREATE TABLE IF NOT EXISTS product_spu (
     id BIGINT PRIMARY KEY COMMENT 'SPU ID',
+    seller_id BIGINT NOT NULL DEFAULT 0 COMMENT '所属商家用户ID，0表示平台自营',
     category_id BIGINT NOT NULL COMMENT '分类ID',
     name VARCHAR(100) NOT NULL COMMENT '商品名称',
     description TEXT DEFAULT NULL COMMENT '商品描述',
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS product_spu (
     status TINYINT NOT NULL DEFAULT 1 COMMENT '状态: 0-下架 1-上架',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_seller_status (seller_id, status),
     INDEX idx_category_id (category_id),
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品SPU表';

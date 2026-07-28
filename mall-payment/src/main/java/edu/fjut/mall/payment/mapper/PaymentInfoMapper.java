@@ -1,6 +1,7 @@
 package edu.fjut.mall.payment.mapper;
 
 import edu.fjut.mall.payment.entity.PaymentInfo;
+import edu.fjut.mall.payment.dto.AdminPaymentPageQuery;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -15,4 +16,6 @@ public interface PaymentInfoMapper {
     int updateStatus(@Param("id") Long id, @Param("payStatus") Integer payStatus);
     int updateTradeNo(@Param("id") Long id, @Param("tradeNo") String tradeNo);
     int countAll();
+    List<PaymentInfo> selectPageForAdmin(@Param("query") AdminPaymentPageQuery query);
+    long countForAdmin(@Param("query") AdminPaymentPageQuery query);
 }

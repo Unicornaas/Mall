@@ -41,4 +41,102 @@
     <update id="updateSafetyStock">
         UPDATE inventory SET safety_stock = #{safetyStock} WHERE sku_id = #{skuId}
     </update>
+
+    <sql id="AdminInventoryWhere">
+        <where>
+            <if test="query.keyword != null and query.keyword != ''">
+                AND (s.sku_code LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR s.name LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR p.name LIKE CONCAT('%', #{query.keyword}, '%'))
+            </if>
+            <if test="query.warningOnly != null and query.warningOnly">
+                AND COALESCE(i.available_stock, s.stock) &lt;= COALESCE(i.safety_stock, 10)
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectAdminPage" resultType="edu.fjut.mall.inventory.dto.AdminInventoryVO">
+        SELECT s.id AS skuId,
+               s.sku_code AS skuCode,
+               s.name AS skuName,
+               p.name AS productName,
+               s.images AS image,
+               COALESCE(i.total_stock, s.stock) AS totalStock,
+               COALESCE(i.locked_stock, 0) AS lockedStock,
+               COALESCE(i.available_stock, s.stock) AS availableStock,
+               COALESCE(i.safety_stock, 10) AS safetyStock,
+               CASE WHEN COALESCE(i.available_stock, s.stock) &lt;= COALESCE(i.safety_stock, 10) THEN TRUE ELSE FALSE END AS warning,
+               COALESCE(i.update_time, s.update_time) AS updateTime
+        FROM product_sku s
+        INNER JOIN product_spu p ON p.id = s.spu_id
+        LEFT JOIN inventory i ON i.sku_id = s.id
+        <include refid="AdminInventoryWhere"/>
+        ORDER BY COALESCE(i.update_time, s.update_time) DESC, s.id DESC
+        LIMIT #{query.offset}, #{query.pageSize}
+    </select>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(1)
+        FROM product_sku s
+        INNER JOIN product_spu p ON p.id = s.spu_id
+        LEFT JOIN inventory i ON i.sku_id = s.id
+        <include refid="AdminInventoryWhere"/>
+    </select>
+
+    <sql id="SellerInventoryWhere">
+        <where>
+            p.seller_id = #{sellerId}
+            <if test="query.keyword != null and query.keyword != ''">
+                AND (s.sku_code LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR s.name LIKE CONCAT('%', #{query.keyword}, '%')
+                    OR p.name LIKE CONCAT('%', #{query.keyword}, '%'))
+            </if>
+            <if test="query.warningOnly != null and query.warningOnly">
+                AND COALESCE(i.available_stock, s.stock) &lt;= COALESCE(i.safety_stock, 10)
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectSellerPage" resultType="edu.fjut.mall.inventory.dto.SellerInventoryVO">
+        SELECT s.id AS skuId,
+               s.sku_code AS skuCode,
+               s.name AS skuName,
+               p.name AS productName,
+               s.images AS image,
+               COALESCE(i.total_stock, s.stock) AS totalStock,
+               COALESCE(i.locked_stock, 0) AS lockedStock,
+               COALESCE(i.available_stock, s.stock) AS availableStock,
+               COALESCE(i.safety_stock, 10) AS safetyStock,
+               CASE WHEN COALESCE(i.available_stock, s.stock) &lt;= COALESCE(i.safety_stock, 10) THEN TRUE ELSE FALSE END AS warning,
+               COALESCE(i.update_time, s.update_time) AS updateTime
+        FROM product_sku s
+        INNER JOIN product_spu p ON p.id = s.spu_id
+        LEFT JOIN inventory i ON i.sku_id = s.id
+        <include refid="SellerInventoryWhere"/>
+        ORDER BY COALESCE(i.update_time, s.update_time) DESC, s.id DESC
+        LIMIT #{query.offset}, #{query.pageSize}
+    </select>
+
+    <select id="countSellerPage" resultType="long">
+        SELECT COUNT(1)
+        FROM product_sku s
+        INNER JOIN product_spu p ON p.id = s.spu_id
+        LEFT JOIN inventory i ON i.sku_id = s.id
+        <include refid="SellerInventoryWhere"/>
+    </select>
+
+    <select id="countSkuBySeller" resultType="int">
+        SELECT COUNT(1)
+        FROM product_sku s
+        INNER JOIN product_spu p ON p.id = s.spu_id
+        WHERE s.id = #{skuId} AND p.seller_id = #{sellerId}
+    </select>
+
+    <update id="updateSkuDisplayStock">
+        UPDATE product_sku SET stock = #{stock}, update_time = NOW() WHERE id = #{skuId}
+    </update>
+
+    <select id="selectSkuDisplayStock" resultType="java.lang.Integer">
+        SELECT stock FROM product_sku WHERE id = #{skuId}
+    </select>
 </mapper>

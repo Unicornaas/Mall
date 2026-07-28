@@ -3,6 +3,7 @@ package edu.fjut.mall.inventory.service;
 import edu.fjut.mall.inventory.dto.*;
 
 import java.util.List;
+import edu.fjut.mall.common.page.PageResult;
 
 public interface InventoryService {
     InventoryVO query(Long skuId);
@@ -13,4 +14,7 @@ public interface InventoryService {
     void add(Long skuId, Integer quantity);
     void init(InventoryInitRequest request);
     List<InventoryLogVO> queryLog(Long skuId);
+    PageResult<AdminInventoryVO> pageForAdmin(AdminInventoryPageQuery query);
+    PageResult<SellerInventoryVO> pageForSeller(SellerInventoryPageQuery query, Long sellerId);
+    List<InventoryLogVO> queryLogForSeller(Long skuId, Long sellerId);
 }

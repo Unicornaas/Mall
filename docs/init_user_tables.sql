@@ -4,7 +4,7 @@
 -- =============================================
 
 -- 用户表
-CREATE TABLE IF NOT EXISTS `user` (
+CREATE TABLE IF NOT EXISTS `user_t` (
     `id`            BIGINT          AUTO_INCREMENT PRIMARY KEY,
     `username`      VARCHAR(50)     NOT NULL UNIQUE    COMMENT '用户名',
     `password`      VARCHAR(255)    NOT NULL           COMMENT '加密后的密码',
@@ -35,3 +35,19 @@ CREATE TABLE IF NOT EXISTS `user_address` (
     `update_time`    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='收货地址表';
+
+-- 商家店铺表：一个商家账号对应一个店铺
+CREATE TABLE IF NOT EXISTS `shop_t` (
+    `id`            BIGINT          PRIMARY KEY,
+    `seller_id`     BIGINT          NOT NULL           COMMENT '商家用户ID',
+    `shop_name`     VARCHAR(128)    NOT NULL           COMMENT '店铺名称',
+    `logo`          VARCHAR(500)    DEFAULT NULL       COMMENT '店铺Logo URL',
+    `contact_name`  VARCHAR(64)     DEFAULT NULL       COMMENT '联系人',
+    `contact_phone` VARCHAR(32)     DEFAULT NULL       COMMENT '联系电话',
+    `description`   VARCHAR(500)    DEFAULT NULL       COMMENT '店铺简介',
+    `status`        TINYINT         NOT NULL DEFAULT 1 COMMENT '状态: 0-停用 1-正常 2-待审核',
+    `create_time`   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `update_time`   DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY `uk_shop_seller_id` (`seller_id`),
+    INDEX `idx_shop_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商家店铺表';

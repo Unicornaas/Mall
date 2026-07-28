@@ -9,4 +9,6 @@ import java.util.List;
 public interface OrderItemMapper {
     int insertBatch(@Param("items") List<OrderItem> items);
     List<OrderItem> selectByOrderId(@Param("orderId") Long orderId);
+    List<OrderItem> selectByOrderIdAndSellerId(@Param("orderId") Long orderId,
+                                               @Param("sellerId") Long sellerId);
 }

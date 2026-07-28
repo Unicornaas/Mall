@@ -11,6 +11,10 @@
         <result column="receiver_phone" property="receiverPhone"/>
         <result column="receiver_address" property="receiverAddress"/>
         <result column="remark" property="remark"/>
+        <result column="shipping_company" property="shippingCompany"/>
+        <result column="tracking_no" property="trackingNo"/>
+        <result column="ship_time" property="shipTime"/>
+        <result column="receive_time" property="receiveTime"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
     </resultMap>
@@ -21,4 +25,52 @@
     <select id="selectById" resultMap="BaseResultMap">SELECT * FROM order_t WHERE id = #{id}</select>
     <select id="selectByUserId" resultMap="BaseResultMap">SELECT * FROM order_t WHERE user_id = #{userId} ORDER BY id DESC</select>
     <update id="updateStatus">UPDATE order_t SET status = #{status} WHERE id = #{id}</update>
+    <select id="selectPageForAdmin" resultMap="BaseResultMap">
+        SELECT * FROM order_t
+        <where>
+            <if test="orderNo != null and orderNo != ''">AND order_no LIKE CONCAT('%', #{orderNo}, '%')</if>
+            <if test="userId != null">AND user_id = #{userId}</if>
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+        ORDER BY create_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+    <select id="countForAdmin" resultType="long">
+        SELECT COUNT(*) FROM order_t
+        <where>
+            <if test="orderNo != null and orderNo != ''">AND order_no LIKE CONCAT('%', #{orderNo}, '%')</if>
+            <if test="userId != null">AND user_id = #{userId}</if>
+            <if test="status != null">AND status = #{status}</if>
+        </where>
+    </select>
+    <sql id="SellerOrderWhere">
+        <where>
+            EXISTS (
+                SELECT 1 FROM order_item seller_item
+                WHERE seller_item.order_id = order_t.id
+                  AND seller_item.seller_id = #{sellerId}
+            )
+            <if test="query.orderNo != null and query.orderNo != ''">
+                AND order_t.order_no LIKE CONCAT('%', #{query.orderNo}, '%')
+            </if>
+            <if test="query.status != null">AND order_t.status = #{query.status}</if>
+        </where>
+    </sql>
+    <select id="selectPageForSeller" resultMap="BaseResultMap">
+        SELECT order_t.* FROM order_t
+        <include refid="SellerOrderWhere"/>
+        ORDER BY order_t.create_time DESC
+        LIMIT #{query.offset}, #{query.pageSize}
+    </select>
+    <select id="countForSeller" resultType="long">
+        SELECT COUNT(*) FROM order_t
+        <include refid="SellerOrderWhere"/>
+    </select>
+    <update id="updateShipment">
+        UPDATE order_t SET status = 2, shipping_company = #{shippingCompany}, tracking_no = #{trackingNo}, ship_time = NOW()
+        WHERE id = #{id} AND status = 1
+    </update>
+    <update id="markReceived">
+        UPDATE order_t SET status = 3, receive_time = NOW() WHERE id = #{id} AND status = 2
+    </update>
 </mapper>

@@ -8,6 +8,9 @@
         <result column="refund_amount" property="refundAmount"/>
         <result column="refund_status" property="refundStatus"/>
         <result column="reason" property="reason"/>
+        <result column="processor_id" property="processorId"/>
+        <result column="process_remark" property="processRemark"/>
+        <result column="process_time" property="processTime"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
     </resultMap>
@@ -21,7 +24,47 @@
         SELECT * FROM payment_refund WHERE id = #{id}
     </select>
 
+    <select id="selectLatestByOrderNo" resultMap="BaseResultMap">
+        SELECT * FROM payment_refund WHERE order_no = #{orderNo}
+        ORDER BY create_time DESC, id DESC LIMIT 1
+    </select>
+
     <update id="updateStatus">
         UPDATE payment_refund SET refund_status = #{refundStatus} WHERE id = #{id}
     </update>
+
+    <update id="updateProcess">
+        UPDATE payment_refund
+        SET refund_status = #{refundStatus}, processor_id = #{processorId},
+            process_remark = #{processRemark}, process_time = NOW()
+        WHERE id = #{id} AND refund_status = 0
+    </update>
+
+    <select id="countActiveByOrderNo" resultType="int">
+        SELECT COUNT(*) FROM payment_refund
+        WHERE order_no = #{orderNo} AND refund_status IN (0, 1)
+    </select>
+
+    <sql id="AdminRefundWhere">
+        <where>
+            <if test="query.orderNo != null and query.orderNo != ''">
+                AND order_no LIKE CONCAT('%', #{query.orderNo}, '%')
+            </if>
+            <if test="query.refundStatus != null">
+                AND refund_status = #{query.refundStatus}
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectPageForAdmin" resultMap="BaseResultMap">
+        SELECT * FROM payment_refund
+        <include refid="AdminRefundWhere"/>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{query.offset}, #{query.pageSize}
+    </select>
+
+    <select id="countForAdmin" resultType="long">
+        SELECT COUNT(*) FROM payment_refund
+        <include refid="AdminRefundWhere"/>
+    </select>
 </mapper>

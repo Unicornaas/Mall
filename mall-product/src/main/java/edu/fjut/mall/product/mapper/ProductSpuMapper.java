@@ -1,6 +1,8 @@
 package edu.fjut.mall.product.mapper;
 
 import edu.fjut.mall.product.entity.ProductSpu;
+import edu.fjut.mall.product.dto.AdminProductPageQuery;
+import edu.fjut.mall.product.dto.SellerProductPageQuery;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -21,4 +23,16 @@ public interface ProductSpuMapper {
     int updateById(ProductSpu spu);
 
     int updateStatus(@Param("id") Long id, @Param("status") Integer status);
+
+    List<ProductSpu> selectPageForAdmin(AdminProductPageQuery query);
+
+    long countForAdmin(AdminProductPageQuery query);
+
+    ProductSpu selectByIdAndSellerId(@Param("id") Long id, @Param("sellerId") Long sellerId);
+
+    List<ProductSpu> selectPageForSeller(@Param("sellerId") Long sellerId,
+                                         @Param("query") SellerProductPageQuery query);
+
+    long countForSeller(@Param("sellerId") Long sellerId,
+                        @Param("query") SellerProductPageQuery query);
 }

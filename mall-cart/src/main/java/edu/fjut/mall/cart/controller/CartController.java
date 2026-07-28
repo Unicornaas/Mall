@@ -20,7 +20,9 @@ public class CartController {
      * CART-01: 加入购物车
      */
     @PostMapping("/add")
-    public Result<CartVO> add(@Valid @RequestBody CartAddRequest request) {
+    public Result<CartVO> add(@Valid @RequestBody CartAddRequest request,
+                              @RequestHeader("X-User-Id") Long userId) {
+        request.setUserId(userId);
         return Result.success(cartService.add(request));
     }
 
@@ -28,7 +30,8 @@ public class CartController {
      * CART-02: 购物车列表
      */
     @GetMapping("/list")
-    public Result<List<CartVO>> list(@RequestParam Long userId) {
+    public Result<List<CartVO>> list(@RequestParam(required = false) Long ignoredUserId,
+                                     @RequestHeader("X-User-Id") Long userId) {
         return Result.success(cartService.list(userId));
     }
 
@@ -38,7 +41,8 @@ public class CartController {
     @PutMapping("/{id}/quantity")
     public Result<CartVO> updateQuantity(@PathVariable Long id,
                                          @Valid @RequestBody CartQuantityRequest request,
-                                         @RequestParam Long userId) {
+                                         @RequestParam(required = false) Long ignoredUserId,
+                                         @RequestHeader("X-User-Id") Long userId) {
         return Result.success(cartService.updateQuantity(id, request.getQuantity(), userId));
     }
 
@@ -48,7 +52,8 @@ public class CartController {
     @PutMapping("/{id}/selected")
     public Result<CartVO> updateSelected(@PathVariable Long id,
                                          @Valid @RequestBody CartSelectedRequest request,
-                                         @RequestParam Long userId) {
+                                         @RequestParam(required = false) Long ignoredUserId,
+                                         @RequestHeader("X-User-Id") Long userId) {
         return Result.success(cartService.updateSelected(id, request.getSelected(), userId));
     }
 
@@ -56,7 +61,8 @@ public class CartController {
      * CART-05: 全选/取消全选
      */
     @PutMapping("/select-all")
-    public Result<Void> selectAll(@RequestParam Long userId,
+    public Result<Void> selectAll(@RequestParam(required = false) Long ignoredUserId,
+                                  @RequestHeader("X-User-Id") Long userId,
                                   @RequestParam Integer selected) {
         cartService.selectAll(userId, selected);
         return Result.success();
@@ -66,7 +72,9 @@ public class CartController {
      * CART-06: 删除购物车项
      */
     @DeleteMapping("/{id}")
-    public Result<Void> delete(@PathVariable Long id, @RequestParam Long userId) {
+    public Result<Void> delete(@PathVariable Long id,
+                               @RequestParam(required = false) Long ignoredUserId,
+                               @RequestHeader("X-User-Id") Long userId) {
         cartService.delete(id, userId);
         return Result.success();
     }
@@ -75,8 +83,9 @@ public class CartController {
      * CART-07: 批量删除
      */
     @DeleteMapping("/batch")
-    public Result<Void> batchDelete(@Valid @RequestBody CartBatchDeleteRequest request) {
-        cartService.batchDelete(request.getUserId(), request.getIds());
+    public Result<Void> batchDelete(@Valid @RequestBody CartBatchDeleteRequest request,
+                                    @RequestHeader("X-User-Id") Long userId) {
+        cartService.batchDelete(userId, request.getIds());
         return Result.success();
     }
 
@@ -84,7 +93,8 @@ public class CartController {
      * CART-08: 购物车商品数量
      */
     @GetMapping("/count")
-    public Result<Integer> count(@RequestParam Long userId) {
+    public Result<Integer> count(@RequestParam(required = false) Long ignoredUserId,
+                                 @RequestHeader("X-User-Id") Long userId) {
         return Result.success(cartService.count(userId));
     }
 }

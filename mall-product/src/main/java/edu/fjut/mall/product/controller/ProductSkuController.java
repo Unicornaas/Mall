@@ -34,22 +34,33 @@ public class ProductSkuController {
 
     /** 新增 SKU */
     @PostMapping
-    public Result<Void> add(@Valid @RequestBody SkuRequest request) {
+    public Result<Void> add(@Valid @RequestBody SkuRequest request,
+                             @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         skuService.add(request);
         return Result.success("新增成功", null);
     }
 
     /** 修改 SKU */
     @PutMapping("/{id}")
-    public Result<Void> update(@PathVariable Long id, @Valid @RequestBody SkuRequest request) {
+    public Result<Void> update(@PathVariable Long id, @Valid @RequestBody SkuRequest request,
+                               @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         skuService.update(id, request);
         return Result.success("修改成功", null);
     }
 
     /** 删除 SKU */
     @DeleteMapping("/{id}")
-    public Result<Void> delete(@PathVariable Long id) {
+    public Result<Void> delete(@PathVariable Long id, @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         skuService.delete(id);
         return Result.success("删除成功", null);
+    }
+
+    private void requireAdmin(Integer role) {
+        if (role == null || role != 2) {
+            throw new edu.fjut.mall.common.exception.BusinessException(403, "请使用商家端专用接口管理商品规格");
+        }
     }
 }

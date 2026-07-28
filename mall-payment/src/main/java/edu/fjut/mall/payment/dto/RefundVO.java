@@ -15,6 +15,9 @@ public class RefundVO {
     private BigDecimal refundAmount;
     private Integer refundStatus;
     private String reason;
+    private Long processorId;
+    private String processRemark;
+    private LocalDateTime processTime;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

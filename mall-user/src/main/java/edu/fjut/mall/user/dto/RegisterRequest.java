@@ -1,6 +1,8 @@
 package edu.fjut.mall.user.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -19,4 +21,9 @@ public class RegisterRequest {
     private String password;
 
     private String phone;
+
+    /** 注册角色：0-买家，1-商家；管理员不可通过公开注册创建 */
+    @Min(value = 0, message = "注册角色不合法")
+    @Max(value = 1, message = "注册角色不合法")
+    private Integer role = 0;
 }

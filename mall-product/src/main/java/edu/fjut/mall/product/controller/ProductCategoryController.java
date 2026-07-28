@@ -40,22 +40,33 @@ public class ProductCategoryController {
 
     /** 新增分类 */
     @PostMapping
-    public Result<Void> add(@Valid @RequestBody CategoryRequest request) {
+    public Result<Void> add(@Valid @RequestBody CategoryRequest request,
+                            @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         categoryService.add(request);
         return Result.success("新增成功", null);
     }
 
     /** 修改分类 */
     @PutMapping("/{id}")
-    public Result<Void> update(@PathVariable Long id, @Valid @RequestBody CategoryRequest request) {
+    public Result<Void> update(@PathVariable Long id, @Valid @RequestBody CategoryRequest request,
+                               @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         categoryService.update(id, request);
         return Result.success("修改成功", null);
     }
 
     /** 删除分类 */
     @DeleteMapping("/{id}")
-    public Result<Void> delete(@PathVariable Long id) {
+    public Result<Void> delete(@PathVariable Long id, @RequestHeader("X-User-Role") Integer role) {
+        requireAdmin(role);
         categoryService.delete(id);
         return Result.success("删除成功", null);
+    }
+
+    private void requireAdmin(Integer role) {
+        if (role == null || role != 2) {
+            throw new edu.fjut.mall.common.exception.BusinessException(403, "仅管理员可以管理分类");
+        }
     }
 }

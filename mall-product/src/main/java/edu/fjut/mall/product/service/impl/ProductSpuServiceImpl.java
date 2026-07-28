@@ -4,6 +4,9 @@ import edu.fjut.mall.common.exception.BusinessException;
 import edu.fjut.mall.common.result.ResultCode;
 import edu.fjut.mall.common.util.SnowflakeIdGenerator;
 import edu.fjut.mall.product.dto.SpuRequest;
+import edu.fjut.mall.product.dto.AdminProductPageQuery;
+import edu.fjut.mall.product.dto.SellerProductPageQuery;
+import edu.fjut.mall.common.page.PageResult;
 import edu.fjut.mall.product.entity.ProductSpu;
 import edu.fjut.mall.product.mapper.ProductSpuMapper;
 import edu.fjut.mall.product.service.ProductSpuService;
@@ -42,9 +45,10 @@ public class ProductSpuServiceImpl implements ProductSpuService {
 
     @Override
     @Transactional
-    public void add(SpuRequest request) {
+    public void add(SpuRequest request, Long sellerId) {
         ProductSpu spu = new ProductSpu();
         spu.setId(snowflakeIdGenerator.nextId());
+        spu.setSellerId(sellerId);
         spu.setCategoryId(request.getCategoryId());
         spu.setName(request.getName());
         spu.setDescription(request.getDescription());
@@ -56,7 +60,7 @@ public class ProductSpuServiceImpl implements ProductSpuService {
         spu.setUpdateTime(LocalDateTime.now());
 
         spuMapper.insert(spu);
-        log.info("新增SPU: id={}, name={}", spu.getId(), spu.getName());
+        log.info("新增SPU: id={}, sellerId={}, name={}", spu.getId(), sellerId, spu.getName());
     }
 
     @Override
@@ -66,6 +70,7 @@ public class ProductSpuServiceImpl implements ProductSpuService {
 
         ProductSpu spu = new ProductSpu();
         spu.setId(id);
+        spu.setCategoryId(request.getCategoryId());
         spu.setName(request.getName());
         spu.setDescription(request.getDescription());
         spu.setBrand(request.getBrand());
@@ -83,5 +88,28 @@ public class ProductSpuServiceImpl implements ProductSpuService {
         getById(id);
         spuMapper.updateStatus(id, status);
         log.info("SPU上下架: id={}, status={}", id, status);
+    }
+
+    @Override
+    public PageResult<ProductSpu> pageForAdmin(AdminProductPageQuery query) {
+        List<ProductSpu> records = spuMapper.selectPageForAdmin(query);
+        long total = spuMapper.countForAdmin(query);
+        return new PageResult<>(records, total, query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public PageResult<ProductSpu> pageForSeller(SellerProductPageQuery query, Long sellerId) {
+        List<ProductSpu> records = spuMapper.selectPageForSeller(sellerId, query);
+        long total = spuMapper.countForSeller(sellerId, query);
+        return new PageResult<>(records, total, query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public ProductSpu getByIdForSeller(Long id, Long sellerId) {
+        ProductSpu spu = spuMapper.selectByIdAndSellerId(id, sellerId);
+        if (spu == null) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权访问该商品");
+        }
+        return spu;
     }
 }

@@ -1,6 +1,7 @@
 package edu.fjut.mall.inventory.service.impl;
 
 import edu.fjut.mall.common.exception.BusinessException;
+import edu.fjut.mall.common.page.PageResult;
 import edu.fjut.mall.common.result.ResultCode;
 import edu.fjut.mall.common.util.SnowflakeIdGenerator;
 import edu.fjut.mall.inventory.dto.*;
@@ -96,12 +97,23 @@ public class InventoryServiceImpl implements InventoryService {
     @Transactional
     public void add(Long skuId, Integer quantity) {
         Inventory inv = inventoryMapper.selectBySkuId(skuId);
-        if (inv == null) throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "库存记录不存在");
+        if (inv == null) {
+            Integer currentStock = inventoryMapper.selectSkuDisplayStock(skuId);
+            if (currentStock == null) {
+                throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "SKU不存在");
+            }
+            InventoryInitRequest initRequest = new InventoryInitRequest();
+            initRequest.setSkuId(skuId);
+            initRequest.setTotalStock(currentStock);
+            init(initRequest);
+            inv = inventoryMapper.selectBySkuId(skuId);
+        }
 
         int beforeStock = inv.getTotalStock();
         inv.setTotalStock(inv.getTotalStock() + quantity);
         inv.setAvailableStock(inv.getAvailableStock() + quantity);
         inventoryMapper.updateStock(skuId, inv.getTotalStock(), inv.getLockedStock(), inv.getAvailableStock());
+        inventoryMapper.updateSkuDisplayStock(skuId, inv.getAvailableStock());
 
         saveLog(skuId, null, "ADD", quantity, beforeStock, inv.getTotalStock());
         log.info("库存补货: skuId={}, quantity={}, total={}", skuId, quantity, inv.getTotalStock());
@@ -123,6 +135,7 @@ public class InventoryServiceImpl implements InventoryService {
         inv.setCreateTime(LocalDateTime.now());
         inv.setUpdateTime(LocalDateTime.now());
         inventoryMapper.insert(inv);
+        inventoryMapper.updateSkuDisplayStock(request.getSkuId(), request.getTotalStock());
 
         saveLog(request.getSkuId(), null, "INIT", request.getTotalStock(), 0, request.getTotalStock());
         log.info("库存初始化: skuId={}, totalStock={}", request.getSkuId(), request.getTotalStock());
@@ -137,6 +150,58 @@ public class InventoryServiceImpl implements InventoryService {
             .beforeStock(l.getBeforeStock()).afterStock(l.getAfterStock())
             .createTime(l.getCreateTime())
             .build()).toList();
+    }
+
+    @Override
+    public PageResult<AdminInventoryVO> pageForAdmin(AdminInventoryPageQuery query) {
+        normalizePageQuery(query);
+        long total = inventoryMapper.countAdminPage(query);
+        if (total == 0) {
+            return PageResult.empty(query);
+        }
+        return new PageResult<>(inventoryMapper.selectAdminPage(query), total,
+            query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public PageResult<SellerInventoryVO> pageForSeller(SellerInventoryPageQuery query, Long sellerId) {
+        normalizePageQuery(query);
+        long total = inventoryMapper.countSellerPage(sellerId, query);
+        if (total == 0) {
+            return PageResult.empty(query);
+        }
+        return new PageResult<>(inventoryMapper.selectSellerPage(sellerId, query), total,
+            query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public List<InventoryLogVO> queryLogForSeller(Long skuId, Long sellerId) {
+        if (inventoryMapper.countSkuBySeller(skuId, sellerId) == 0) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权查看该 SKU 的库存日志");
+        }
+        return queryLog(skuId);
+    }
+
+    private void normalizePageQuery(AdminInventoryPageQuery query) {
+        if (query.getPageNum() < 1) {
+            query.setPageNum(1);
+        }
+        if (query.getPageSize() < 1) {
+            query.setPageSize(20);
+        } else if (query.getPageSize() > 100) {
+            query.setPageSize(100);
+        }
+    }
+
+    private void normalizePageQuery(SellerInventoryPageQuery query) {
+        if (query.getPageNum() < 1) {
+            query.setPageNum(1);
+        }
+        if (query.getPageSize() < 1) {
+            query.setPageSize(20);
+        } else if (query.getPageSize() > 100) {
+            query.setPageSize(100);
+        }
     }
 
     private void saveLog(Long skuId, String orderNo, String changeType, Integer changeCount,

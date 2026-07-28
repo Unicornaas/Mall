@@ -1,8 +1,11 @@
 package edu.fjut.mall.user.mapper;
 
 import edu.fjut.mall.user.entity.User;
+import edu.fjut.mall.user.dto.AdminUserPageQuery;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 /**
  * 用户 Mapper
@@ -21,4 +24,10 @@ public interface UserMapper {
 
     /** 更新用户 */
     int updateById(User user);
+
+    List<User> selectPageForAdmin(AdminUserPageQuery query);
+
+    long countForAdmin(AdminUserPageQuery query);
+
+    int updateStatus(@Param("id") Long id, @Param("status") Integer status);
 }

@@ -36,10 +36,33 @@
     </update>
 
     <update id="updateTradeNo">
-        UPDATE payment_info SET trade_no = #{tradeNo} WHERE id = #{id}
+        UPDATE payment_info SET trade_no = #{tradeNo}, pay_time = NOW() WHERE id = #{id}
     </update>
 
     <select id="countAll" resultType="int">
         SELECT COUNT(*) FROM payment_info
+    </select>
+
+    <sql id="AdminPaymentWhere">
+        <where>
+            <if test="query.orderNo != null and query.orderNo != ''">
+                AND order_no LIKE CONCAT('%', #{query.orderNo}, '%')
+            </if>
+            <if test="query.payStatus != null">
+                AND pay_status = #{query.payStatus}
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectPageForAdmin" resultMap="BaseResultMap">
+        SELECT * FROM payment_info
+        <include refid="AdminPaymentWhere"/>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{query.offset}, #{query.pageSize}
+    </select>
+
+    <select id="countForAdmin" resultType="long">
+        SELECT COUNT(*) FROM payment_info
+        <include refid="AdminPaymentWhere"/>
     </select>
 </mapper>

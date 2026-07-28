@@ -1,6 +1,7 @@
 package edu.fjut.mall.user.service;
 
 import edu.fjut.mall.user.dto.*;
+import edu.fjut.mall.common.page.PageResult;
 
 /**
  * 用户服务接口
@@ -31,4 +32,8 @@ public interface UserService {
      * 修改密码
      */
     void changePassword(Long userId, ChangePasswordRequest request);
+
+    PageResult<UserVO> pageForAdmin(AdminUserPageQuery query);
+
+    void updateStatusForAdmin(Long userId, Integer status, Long operatorId);
 }

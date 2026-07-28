@@ -2,11 +2,14 @@ package edu.fjut.mall.user.service.impl;
 
 import cn.hutool.crypto.digest.BCrypt;
 import edu.fjut.mall.common.result.ResultCode;
+import edu.fjut.mall.common.page.PageResult;
 import edu.fjut.mall.common.exception.BusinessException;
 import edu.fjut.mall.common.util.JwtUtil;
 import edu.fjut.mall.common.util.SnowflakeIdGenerator;
 import edu.fjut.mall.user.dto.*;
+import edu.fjut.mall.user.entity.Shop;
 import edu.fjut.mall.user.entity.User;
+import edu.fjut.mall.user.mapper.ShopMapper;
 import edu.fjut.mall.user.mapper.UserMapper;
 import edu.fjut.mall.user.service.UserService;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 用户服务实现
@@ -25,6 +29,7 @@ import java.time.LocalDateTime;
 public class UserServiceImpl implements UserService {
 
     private final UserMapper userMapper;
+    private final ShopMapper shopMapper;
     private final SnowflakeIdGenerator snowflakeIdGenerator;
 
     @Override
@@ -43,13 +48,26 @@ public class UserServiceImpl implements UserService {
         user.setPassword(BCrypt.hashpw(request.getPassword()));
         user.setNickname(request.getUsername());        // 默认昵称 = 用户名
         user.setPhone(request.getPhone());
-        user.setRole(0);                                // 默认买家
+        // 公开注册只允许买家或商家，管理员账号必须由后台维护。
+        user.setRole(request.getRole() != null ? request.getRole() : 0);
         user.setStatus(1);                               // 启用
         user.setCreateTime(LocalDateTime.now());
         user.setUpdateTime(LocalDateTime.now());
 
         // 3. 入库
         userMapper.insert(user);
+        if (Integer.valueOf(1).equals(user.getRole())) {
+            Shop shop = new Shop();
+            shop.setId(snowflakeIdGenerator.nextId());
+            shop.setSellerId(user.getId());
+            shop.setShopName(user.getUsername() + "的店铺");
+            shop.setContactName(user.getNickname());
+            shop.setContactPhone(user.getPhone());
+            shop.setStatus(1);
+            shop.setCreateTime(LocalDateTime.now());
+            shop.setUpdateTime(LocalDateTime.now());
+            shopMapper.insert(shop);
+        }
         log.info("新用户注册成功: username={}, id={}", request.getUsername(), user.getId());
     }
 
@@ -127,6 +145,29 @@ public class UserServiceImpl implements UserService {
         user.setUpdateTime(LocalDateTime.now());
         userMapper.updateById(user);
         log.info("密码修改成功: userId={}", userId);
+    }
+
+    @Override
+    public PageResult<UserVO> pageForAdmin(AdminUserPageQuery query) {
+        List<UserVO> records = userMapper.selectPageForAdmin(query).stream()
+                .map(this::toUserVO)
+                .toList();
+        long total = userMapper.countForAdmin(query);
+        return new PageResult<>(records, total, query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    @Transactional
+    public void updateStatusForAdmin(Long userId, Integer status, Long operatorId) {
+        if (userId.equals(operatorId)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "不能修改当前管理员自己的状态");
+        }
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ResultCode.USER_NOT_FOUND);
+        }
+        userMapper.updateStatus(userId, status);
+        log.info("管理员更新用户状态: operatorId={}, userId={}, status={}", operatorId, userId, status);
     }
 
     // ==================== 工具方法 ====================

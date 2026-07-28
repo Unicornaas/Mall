@@ -1,6 +1,8 @@
 package edu.fjut.mall.payment.service.impl;
 
 import edu.fjut.mall.common.exception.BusinessException;
+import edu.fjut.mall.common.page.PageQuery;
+import edu.fjut.mall.common.page.PageResult;
 import edu.fjut.mall.common.result.ResultCode;
 import edu.fjut.mall.common.util.SnowflakeIdGenerator;
 import edu.fjut.mall.payment.dto.*;
@@ -34,6 +36,11 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public PaymentVO create(CreatePaymentRequest request) {
+        Map<String, Object> order = getOrder(request.getOrderNo(), request.getUserId());
+        if (((Number) order.get("status")).intValue() != 1) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "仅已支付且未发货的订单可申请退款");
+        }
+        request.setAmount((BigDecimal) order.get("total_amount"));
         // 检查是否已存在支付单
         PaymentInfo existing = paymentInfoMapper.selectByOrderNo(request.getOrderNo());
         if (existing != null) throw new BusinessException(ResultCode.CONFLICT.getCode(), "该订单支付单已存在");
@@ -55,7 +62,11 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
-    public PaymentVO pay(String orderNo) {
+    public PaymentVO pay(String orderNo, Long userId) {
+        Map<String, Object> order = getOrder(orderNo, userId);
+        if (((Number) order.get("status")).intValue() != 0) {
+            throw new BusinessException(ResultCode.PAYMENT_FAILED.getCode(), "订单当前不可支付");
+        }
         PaymentInfo info = paymentInfoMapper.selectByOrderNo(orderNo);
         if (info == null) {
             // 兜底：如果支付单不存在，尝试从订单表自动创建
@@ -67,6 +78,21 @@ public class PaymentServiceImpl implements PaymentService {
         // 模拟支付成功
         String tradeNo = "PAY" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
             + String.format("%06d", (long) (Math.random() * 1000000));
+        List<Map<String, Object>> items = jdbcTemplate.queryForList(
+            "SELECT sku_id, quantity FROM order_item "
+                + "WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?)", orderNo);
+        for (Map<String, Object> item : items) {
+            int rows = jdbcTemplate.update(
+                "UPDATE inventory SET total_stock = total_stock - ?, locked_stock = locked_stock - ?, "
+                    + "update_time = NOW() WHERE sku_id = ? AND locked_stock >= ? AND total_stock >= ?",
+                ((Number) item.get("quantity")).intValue(), ((Number) item.get("quantity")).intValue(),
+                ((Number) item.get("sku_id")).longValue(), ((Number) item.get("quantity")).intValue(),
+                ((Number) item.get("quantity")).intValue());
+            if (rows == 0) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "库存扣减失败");
+            }
+        }
+
         info.setPayStatus(1);  // 已支付
         info.setTradeNo(tradeNo);
         info.setPayTime(LocalDateTime.now());
@@ -82,7 +108,8 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Override
     @Transactional
-    public PaymentVO queryStatus(String orderNo) {
+    public PaymentVO queryStatus(String orderNo, Long userId) {
+        getOrder(orderNo, userId);
         PaymentInfo info = paymentInfoMapper.selectByOrderNo(orderNo);
         if (info == null) {
             // 兜底：如果支付单不存在，尝试从订单表自动创建
@@ -94,12 +121,21 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public RefundVO refund(RefundRequest request) {
+        getOrder(request.getOrderNo(), request.getUserId());
+        if (request.getRefundAmount() == null
+                || request.getRefundAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款金额必须大于 0");
+        }
         PaymentInfo info = paymentInfoMapper.selectByOrderNo(request.getOrderNo());
         if (info == null) throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "支付单不存在");
         if (info.getPayStatus() != 1)
             throw new BusinessException(ResultCode.PAYMENT_FAILED.getCode(), "仅已支付的订单可申请退款");
         if (request.getRefundAmount().compareTo(info.getAmount()) > 0)
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款金额不能超过支付金额");
+        if (request.getRefundAmount().compareTo(info.getAmount()) != 0)
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "当前仅支持整单退款");
+        if (paymentRefundMapper.countActiveByOrderNo(request.getOrderNo()) > 0)
+            throw new BusinessException(ResultCode.CONFLICT.getCode(), "该订单已有待处理或已完成的退款申请");
 
         PaymentRefund refund = new PaymentRefund();
         refund.setId(idGen.nextId());
@@ -117,26 +153,56 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     @Override
+    public RefundVO queryRefundStatus(String orderNo, Long userId) {
+        getOrder(orderNo, userId);
+        PaymentRefund refund = paymentRefundMapper.selectLatestByOrderNo(orderNo);
+        return refund == null ? null : toRefundVO(refund);
+    }
+
+    @Override
     @Transactional
     public RefundVO processRefund(Long refundId, Integer refundStatus) {
+        return processRefund(refundId, refundStatus, null, null);
+    }
+
+    @Override
+    @Transactional
+    public RefundVO processRefund(Long refundId, Integer refundStatus, String processRemark, Long processorId) {
+        if (refundStatus == null || (refundStatus != 1 && refundStatus != 2)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款处理结果只能为同意或拒绝");
+        }
+        if (refundStatus == 2 && (processRemark == null || processRemark.isBlank())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "拒绝退款时必须填写处理备注");
+        }
         PaymentRefund refund = paymentRefundMapper.selectById(refundId);
         if (refund == null) throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "退款记录不存在");
         if (refund.getRefundStatus() != 0)
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款记录已处理");
 
-        paymentRefundMapper.updateStatus(refundId, refundStatus);
-        refund.setRefundStatus(refundStatus);
-
         if (refundStatus == 1) {
-            // 退款成功，更新支付状态
             PaymentInfo info = paymentInfoMapper.selectByOrderNo(refund.getOrderNo());
-            if (info != null) {
-                paymentInfoMapper.updateStatus(info.getId(), 2);  // 已退款
+            if (info == null || info.getPayStatus() != 1) {
+                throw new BusinessException(ResultCode.PAYMENT_FAILED.getCode(), "支付单当前不可退款");
             }
+            int orderRows = jdbcTemplate.update(
+                "UPDATE order_t SET status = 4 WHERE order_no = ? AND status = 1", refund.getOrderNo());
+            if (orderRows == 0) {
+                throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "订单已发货或状态已变化，不能执行退款");
+            }
+            restoreInventory(refund.getOrderNo());
+            paymentInfoMapper.updateStatus(info.getId(), 2);
             log.info("退款成功: refundId={}, orderNo={}, amount={}", refundId, refund.getOrderNo(), refund.getRefundAmount());
         } else {
             log.info("退款拒绝: refundId={}, orderNo={}", refundId, refund.getOrderNo());
         }
+        int rows = paymentRefundMapper.updateProcess(refundId, refundStatus, processorId, processRemark);
+        if (rows == 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款记录已处理");
+        }
+        refund.setRefundStatus(refundStatus);
+        refund.setProcessorId(processorId);
+        refund.setProcessRemark(processRemark);
+        refund.setProcessTime(LocalDateTime.now());
         return toRefundVO(refund);
     }
 
@@ -145,6 +211,59 @@ public class PaymentServiceImpl implements PaymentService {
         int offset = (pageNum - 1) * pageSize;
         List<PaymentInfo> list = paymentInfoMapper.selectAll(offset, pageSize);
         return list.stream().map(this::toVO).toList();
+    }
+
+    @Override
+    public PageResult<PaymentVO> pageForAdmin(AdminPaymentPageQuery query) {
+        normalizePageQuery(query);
+        long total = paymentInfoMapper.countForAdmin(query);
+        if (total == 0) {
+            return PageResult.empty(query);
+        }
+        List<PaymentVO> records = paymentInfoMapper.selectPageForAdmin(query).stream().map(this::toVO).toList();
+        return new PageResult<>(records, total, query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public PageResult<RefundVO> refundPageForAdmin(AdminRefundPageQuery query) {
+        normalizePageQuery(query);
+        long total = paymentRefundMapper.countForAdmin(query);
+        if (total == 0) {
+            return PageResult.empty(query);
+        }
+        List<RefundVO> records = paymentRefundMapper.selectPageForAdmin(query).stream().map(this::toRefundVO).toList();
+        return new PageResult<>(records, total, query.getPageNum(), query.getPageSize());
+    }
+
+    private void restoreInventory(String orderNo) {
+        List<Map<String, Object>> items = jdbcTemplate.queryForList(
+            "SELECT sku_id, quantity FROM order_item WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?)", orderNo);
+        for (Map<String, Object> item : items) {
+            Long skuId = ((Number) item.get("sku_id")).longValue();
+            int quantity = ((Number) item.get("quantity")).intValue();
+            int rows = jdbcTemplate.update(
+                "UPDATE inventory SET total_stock = total_stock + ?, available_stock = available_stock + ?, update_time = NOW() WHERE sku_id = ?",
+                quantity, quantity, skuId);
+            if (rows == 0) {
+                throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "退款库存记录不存在");
+            }
+            jdbcTemplate.update("UPDATE product_sku SET stock = stock + ? WHERE id = ?", quantity, skuId);
+            jdbcTemplate.update(
+                "INSERT INTO inventory_log (id, sku_id, order_no, change_type, change_count, before_stock, after_stock) "
+                    + "SELECT ?, sku_id, ?, 'REFUND', ?, available_stock - ?, available_stock FROM inventory WHERE sku_id = ?",
+                idGen.nextId(), orderNo, quantity, quantity, skuId);
+        }
+    }
+
+    private void normalizePageQuery(PageQuery query) {
+        if (query.getPageNum() < 1) {
+            query.setPageNum(1);
+        }
+        if (query.getPageSize() < 1) {
+            query.setPageSize(20);
+        } else if (query.getPageSize() > 100) {
+            query.setPageSize(100);
+        }
     }
 
     /**
@@ -175,6 +294,20 @@ public class PaymentServiceImpl implements PaymentService {
         return info;
     }
 
+    private Map<String, Object> getOrder(String orderNo, Long userId) {
+        List<Map<String, Object>> results = jdbcTemplate.queryForList(
+            "SELECT id, user_id, total_amount, status FROM order_t WHERE order_no = ?", orderNo);
+        if (results.isEmpty()) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "订单不存在");
+        }
+        Map<String, Object> order = results.get(0);
+        long ownerId = ((Number) order.get("user_id")).longValue();
+        if (ownerId != userId) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权操作该订单");
+        }
+        return order;
+    }
+
     private PaymentVO toVO(PaymentInfo info) {
         return PaymentVO.builder()
             .id(info.getId()).orderNo(info.getOrderNo()).userId(info.getUserId())
@@ -188,7 +321,8 @@ public class PaymentServiceImpl implements PaymentService {
         return RefundVO.builder()
             .id(refund.getId()).orderNo(refund.getOrderNo()).userId(refund.getUserId())
             .refundAmount(refund.getRefundAmount()).refundStatus(refund.getRefundStatus())
-            .reason(refund.getReason())
+            .reason(refund.getReason()).processorId(refund.getProcessorId())
+            .processRemark(refund.getProcessRemark()).processTime(refund.getProcessTime())
             .createTime(refund.getCreateTime()).updateTime(refund.getUpdateTime())
             .build();
     }

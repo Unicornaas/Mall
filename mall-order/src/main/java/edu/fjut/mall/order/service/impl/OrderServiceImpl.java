@@ -3,8 +3,13 @@ package edu.fjut.mall.order.service.impl;
 import edu.fjut.mall.common.exception.BusinessException;
 import edu.fjut.mall.common.result.ResultCode;
 import edu.fjut.mall.common.util.SnowflakeIdGenerator;
+import edu.fjut.mall.common.page.PageResult;
+import edu.fjut.mall.order.dto.AdminOrderPageQuery;
 import edu.fjut.mall.order.dto.CreateOrderRequest;
 import edu.fjut.mall.order.dto.OrderVO;
+import edu.fjut.mall.order.dto.ShipOrderRequest;
+import edu.fjut.mall.order.dto.SellerOrderPageQuery;
+import edu.fjut.mall.order.dto.SellerOrderVO;
 import edu.fjut.mall.order.dto.OrderVO.OrderItemVO;
 import edu.fjut.mall.order.entity.Order;
 import edu.fjut.mall.order.entity.OrderItem;
@@ -43,12 +48,17 @@ public class OrderServiceImpl implements OrderService {
 
         for (var itemReq : request.getItems()) {
             Map<String, Object> sku = jdbcTemplate.queryForMap(
-                "SELECT name, price, images FROM product_sku WHERE id = ?", itemReq.getSkuId());
+                "SELECT sku.name, sku.price, sku.images, spu.seller_id "
+                    + "FROM product_sku sku JOIN product_spu spu ON spu.id = sku.spu_id "
+                    + "WHERE sku.id = ? AND sku.spu_id = ?",
+                itemReq.getSkuId(), itemReq.getSpuId());
             String name = (String) sku.get("name");
             BigDecimal price = (BigDecimal) sku.get("price");
+            Long itemSellerId = ((Number) sku.get("seller_id")).longValue();
 
             OrderItem item = new OrderItem();
             item.setId(idGen.nextId());
+            item.setSellerId(itemSellerId);
             item.setSpuId(itemReq.getSpuId());
             item.setSkuId(itemReq.getSkuId());
             item.setProductName(name);
@@ -84,13 +94,29 @@ public class OrderServiceImpl implements OrderService {
         items.forEach(i -> i.setOrderId(order.getId()));
         orderItemMapper.insertBatch(items);
 
-        // 5. 扣库存
+        // 5. 预占库存。inventory 是库存唯一来源；兼容旧数据时按 SKU stock 自动初始化。
         for (var itemReq : request.getItems()) {
-            int rows = jdbcTemplate.update(
-                "UPDATE product_sku SET stock = stock - ? WHERE id = ? AND stock >= ?",
-                itemReq.getQuantity(), itemReq.getSkuId(), itemReq.getQuantity());
-            if (rows == 0) throw new BusinessException(ResultCode.STOCK_INSUFFICIENT.getCode(),
-                "SKU " + itemReq.getSkuId() + " 库存不足");
+            ensureInventoryRow(itemReq.getSkuId());
+            Map<String, Object> inventory = jdbcTemplate.queryForMap(
+                "SELECT available_stock, locked_stock FROM inventory WHERE sku_id = ? FOR UPDATE",
+                itemReq.getSkuId());
+            int available = ((Number) inventory.get("available_stock")).intValue();
+            int locked = ((Number) inventory.get("locked_stock")).intValue();
+            if (available < itemReq.getQuantity()) {
+                throw new BusinessException(ResultCode.STOCK_INSUFFICIENT.getCode(),
+                    "SKU " + itemReq.getSkuId() + " 库存不足");
+            }
+            jdbcTemplate.update(
+                "UPDATE inventory SET available_stock = ?, locked_stock = ?, update_time = NOW() WHERE sku_id = ?",
+                available - itemReq.getQuantity(), locked + itemReq.getQuantity(), itemReq.getSkuId());
+            // product_sku.stock is kept as a display-compatible available-stock snapshot.
+            jdbcTemplate.update("UPDATE product_sku SET stock = ? WHERE id = ?",
+                available - itemReq.getQuantity(), itemReq.getSkuId());
+            jdbcTemplate.update(
+                "INSERT INTO inventory_log (id, sku_id, order_no, change_type, change_count, before_stock, after_stock) "
+                    + "VALUES (?, ?, ?, 'LOCK', ?, ?, ?)",
+                idGen.nextId(), itemReq.getSkuId(), order.getOrderNo(), itemReq.getQuantity(),
+                available, available - itemReq.getQuantity());
         }
 
         // 6. 创建支付单（待支付状态）
@@ -104,8 +130,10 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public OrderVO getById(Long id) {
+    public OrderVO getById(Long id, Long userId) {
         Order order = orderMapper.selectById(id);
+        if (order != null && !order.getUserId().equals(userId))
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权查看该订单");
         if (order == null) throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "订单不存在");
         List<OrderItem> items = orderItemMapper.selectByOrderId(id);
         return toVO(order, items);
@@ -131,13 +159,164 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权操作");
         if (order.getStatus() != 0)
             throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "仅待支付订单可取消");
+        List<OrderItem> items = orderItemMapper.selectByOrderId(id);
+        for (OrderItem item : items) {
+            int rows = jdbcTemplate.update(
+                "UPDATE inventory SET available_stock = available_stock + ?, "
+                    + "locked_stock = locked_stock - ?, update_time = NOW() "
+                    + "WHERE sku_id = ? AND locked_stock >= ?",
+                item.getQuantity(), item.getQuantity(), item.getSkuId(), item.getQuantity());
+            if (rows == 0) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "库存释放失败");
+            }
+            jdbcTemplate.update("UPDATE product_sku SET stock = stock + ? WHERE id = ?",
+                item.getQuantity(), item.getSkuId());
+            jdbcTemplate.update(
+                "INSERT INTO inventory_log (id, sku_id, order_no, change_type, change_count, before_stock, after_stock) "
+                    + "SELECT ?, sku_id, ?, 'RELEASE', ?, available_stock - ?, available_stock "
+                    + "FROM inventory WHERE sku_id = ?",
+                idGen.nextId(), order.getOrderNo(), item.getQuantity(), item.getQuantity(), item.getSkuId());
+        }
+        jdbcTemplate.update("UPDATE payment_info SET pay_status = 3 WHERE order_no = ? AND pay_status = 0",
+            order.getOrderNo());
         orderMapper.updateStatus(id, 4);
         log.info("订单已取消: id={}", id);
+    }
+
+    @Override
+    public PageResult<OrderVO> pageForAdmin(AdminOrderPageQuery query) {
+        List<Order> orders = orderMapper.selectPageForAdmin(query);
+        List<OrderVO> records = orders.stream()
+            .map(order -> toVO(order, orderItemMapper.selectByOrderId(order.getId())))
+            .toList();
+        return new PageResult<>(records, orderMapper.countForAdmin(query), query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public OrderVO getByIdForAdmin(Long id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "订单不存在");
+        }
+        return toVO(order, orderItemMapper.selectByOrderId(id));
+    }
+
+    @Override
+    @Transactional
+    public void closeForAdmin(Long id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "订单不存在");
+        }
+        if (order.getStatus() != 0) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "仅待支付订单可以关闭");
+        }
+        releaseReservedStock(order);
+        log.info("管理员关闭订单: id={}", id);
+    }
+
+    @Override
+    @Transactional
+    public void shipForAdmin(Long id, ShipOrderRequest request) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "订单不存在");
+        }
+        if (order.getStatus() != 1 || orderMapper.updateShipment(id, request.getShippingCompany(), request.getTrackingNo()) == 0) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "仅已支付订单可以发货");
+        }
+        log.info("管理员发货: id={}, trackingNo={}", id, request.getTrackingNo());
+    }
+
+    @Override
+    @Transactional
+    public void receiveForAdmin(Long id) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "订单不存在");
+        }
+        if (order.getStatus() != 2 || orderMapper.markReceived(id) == 0) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "仅已发货订单可以确认收货");
+        }
+        log.info("管理员确认收货: id={}", id);
+    }
+
+    @Override
+    public PageResult<SellerOrderVO> pageForSeller(SellerOrderPageQuery query, Long sellerId) {
+        normalizeSellerPageQuery(query);
+        List<Order> orders = orderMapper.selectPageForSeller(sellerId, query);
+        List<SellerOrderVO> records = orders.stream()
+            .map(order -> toSellerVO(order, orderItemMapper.selectByOrderIdAndSellerId(order.getId(), sellerId)))
+            .toList();
+        return new PageResult<>(records, orderMapper.countForSeller(sellerId, query),
+            query.getPageNum(), query.getPageSize());
+    }
+
+    @Override
+    public SellerOrderVO getByIdForSeller(Long id, Long sellerId) {
+        Order order = orderMapper.selectById(id);
+        if (order == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "订单不存在");
+        }
+        List<OrderItem> items = orderItemMapper.selectByOrderIdAndSellerId(id, sellerId);
+        if (items.isEmpty()) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权查看该订单");
+        }
+        return toSellerVO(order, items);
     }
 
     private String generateOrderNo() {
         return LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss"))
                 + String.format("%06d", (long)(Math.random() * 1000000));
+    }
+
+    private void normalizeSellerPageQuery(SellerOrderPageQuery query) {
+        if (query.getPageNum() < 1) {
+            query.setPageNum(1);
+        }
+        if (query.getPageSize() < 1) {
+            query.setPageSize(20);
+        } else if (query.getPageSize() > 100) {
+            query.setPageSize(100);
+        }
+    }
+
+    private void releaseReservedStock(Order order) {
+        List<OrderItem> items = orderItemMapper.selectByOrderId(order.getId());
+        for (OrderItem item : items) {
+            int rows = jdbcTemplate.update(
+                "UPDATE inventory SET available_stock = available_stock + ?, "
+                    + "locked_stock = locked_stock - ?, update_time = NOW() "
+                    + "WHERE sku_id = ? AND locked_stock >= ?",
+                item.getQuantity(), item.getQuantity(), item.getSkuId(), item.getQuantity());
+            if (rows == 0) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "库存释放失败");
+            }
+            jdbcTemplate.update("UPDATE product_sku SET stock = stock + ? WHERE id = ?",
+                item.getQuantity(), item.getSkuId());
+            jdbcTemplate.update(
+                "INSERT INTO inventory_log (id, sku_id, order_no, change_type, change_count, before_stock, after_stock) "
+                    + "SELECT ?, sku_id, ?, 'RELEASE', ?, available_stock - ?, available_stock "
+                    + "FROM inventory WHERE sku_id = ?",
+                idGen.nextId(), order.getOrderNo(), item.getQuantity(), item.getQuantity(), item.getSkuId());
+        }
+        jdbcTemplate.update("UPDATE payment_info SET pay_status = 3 WHERE order_no = ? AND pay_status = 0",
+            order.getOrderNo());
+        orderMapper.updateStatus(order.getId(), 4);
+    }
+
+    private void ensureInventoryRow(Long skuId) {
+        Integer count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM inventory WHERE sku_id = ?", Integer.class, skuId);
+        if (count != null && count == 0) {
+            Map<String, Object> sku = jdbcTemplate.queryForMap(
+                "SELECT stock FROM product_sku WHERE id = ?", skuId);
+            int stock = ((Number) sku.get("stock")).intValue();
+            jdbcTemplate.update(
+                "INSERT IGNORE INTO inventory (id, sku_id, total_stock, locked_stock, available_stock, safety_stock) "
+                    + "VALUES (?, ?, ?, 0, ?, 10)",
+                idGen.nextId(), skuId, stock, stock);
+        }
     }
 
     private OrderVO toVO(Order o, List<OrderItem> items) {
@@ -146,7 +325,31 @@ public class OrderServiceImpl implements OrderService {
             .totalAmount(o.getTotalAmount()).status(o.getStatus())
             .receiverName(o.getReceiverName()).receiverPhone(o.getReceiverPhone())
             .receiverAddress(o.getReceiverAddress()).remark(o.getRemark())
+            .shippingCompany(o.getShippingCompany()).trackingNo(o.getTrackingNo())
+            .shipTime(o.getShipTime()).receiveTime(o.getReceiveTime())
             .createTime(o.getCreateTime())
+            .items(items.stream().map(i -> OrderItemVO.builder()
+                .id(i.getId()).spuId(i.getSpuId()).skuId(i.getSkuId())
+                .productName(i.getProductName()).productImage(i.getProductImage())
+                .price(i.getPrice()).quantity(i.getQuantity()).totalPrice(i.getTotalPrice())
+                .build()).toList())
+            .build();
+    }
+
+    private SellerOrderVO toSellerVO(Order order, List<OrderItem> items) {
+        BigDecimal sellerAmount = items.stream()
+            .map(OrderItem::getTotalPrice)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return SellerOrderVO.builder()
+            .id(order.getId())
+            .orderNo(order.getOrderNo())
+            .sellerAmount(sellerAmount)
+            .status(order.getStatus())
+            .receiverName(order.getReceiverName())
+            .receiverPhone(order.getReceiverPhone())
+            .receiverAddress(order.getReceiverAddress())
+            .remark(order.getRemark())
+            .createTime(order.getCreateTime())
             .items(items.stream().map(i -> OrderItemVO.builder()
                 .id(i.getId()).spuId(i.getSpuId()).skuId(i.getSkuId())
                 .productName(i.getProductName()).productImage(i.getProductImage())

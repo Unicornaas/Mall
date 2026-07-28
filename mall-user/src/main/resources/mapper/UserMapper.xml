@@ -43,4 +43,36 @@
         WHERE id = #{id}
     </update>
 
+    <select id="selectPageForAdmin" resultMap="BaseResultMap">
+        SELECT * FROM user_t
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (username LIKE CONCAT('%', #{keyword}, '%')
+                    OR nickname LIKE CONCAT('%', #{keyword}, '%')
+                    OR phone LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="status != null">AND status = #{status}</if>
+            <if test="role != null">AND role = #{role}</if>
+        </where>
+        ORDER BY create_time DESC
+        LIMIT #{offset}, #{pageSize}
+    </select>
+
+    <select id="countForAdmin" resultType="long">
+        SELECT COUNT(*) FROM user_t
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (username LIKE CONCAT('%', #{keyword}, '%')
+                    OR nickname LIKE CONCAT('%', #{keyword}, '%')
+                    OR phone LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="status != null">AND status = #{status}</if>
+            <if test="role != null">AND role = #{role}</if>
+        </where>
+    </select>
+
+    <update id="updateStatus">
+        UPDATE user_t SET status = #{status} WHERE id = #{id}
+    </update>
+
 </mapper>
