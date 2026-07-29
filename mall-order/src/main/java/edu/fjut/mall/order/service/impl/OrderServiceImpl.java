@@ -10,11 +10,18 @@ import edu.fjut.mall.order.dto.OrderVO;
 import edu.fjut.mall.order.dto.ShipOrderRequest;
 import edu.fjut.mall.order.dto.SellerOrderPageQuery;
 import edu.fjut.mall.order.dto.SellerOrderVO;
+import edu.fjut.mall.order.dto.SellerShipmentVO;
+import edu.fjut.mall.order.dto.SellerDashboardOrderVO;
+import edu.fjut.mall.order.dto.SellerDashboardOverviewVO;
+import edu.fjut.mall.order.dto.SellerDashboardStockAlertVO;
 import edu.fjut.mall.order.dto.OrderVO.OrderItemVO;
 import edu.fjut.mall.order.entity.Order;
 import edu.fjut.mall.order.entity.OrderItem;
+import edu.fjut.mall.order.entity.SellerOrder;
 import edu.fjut.mall.order.mapper.OrderItemMapper;
 import edu.fjut.mall.order.mapper.OrderMapper;
+import edu.fjut.mall.order.mapper.SellerOrderMapper;
+import edu.fjut.mall.order.mapper.SellerDashboardMapper;
 import edu.fjut.mall.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +34,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Slf4j
@@ -36,6 +44,8 @@ public class OrderServiceImpl implements OrderService {
 
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
+    private final SellerOrderMapper sellerOrderMapper;
+    private final SellerDashboardMapper sellerDashboardMapper;
     private final SnowflakeIdGenerator idGen;
     private final JdbcTemplate jdbcTemplate;
 
@@ -47,19 +57,29 @@ public class OrderServiceImpl implements OrderService {
         BigDecimal totalAmount = BigDecimal.ZERO;
 
         for (var itemReq : request.getItems()) {
-            Map<String, Object> sku = jdbcTemplate.queryForMap(
-                "SELECT sku.name, sku.price, sku.images, spu.seller_id "
+            List<Map<String, Object>> skuRows = jdbcTemplate.queryForList(
+                "SELECT sku.id AS sku_id, sku.spu_id, sku.name, sku.price, sku.images, spu.seller_id "
                     + "FROM product_sku sku JOIN product_spu spu ON spu.id = sku.spu_id "
-                    + "WHERE sku.id = ? AND sku.spu_id = ?",
-                itemReq.getSkuId(), itemReq.getSpuId());
+                    + "WHERE sku.id = ?",
+                itemReq.getSkuId());
+            if (skuRows.isEmpty()) {
+                throw new BusinessException(ResultCode.NOT_FOUND.getCode(),
+                    "商品或 SKU 不存在，请刷新购物车后重试");
+            }
+            Map<String, Object> sku = skuRows.get(0);
             String name = (String) sku.get("name");
             BigDecimal price = (BigDecimal) sku.get("price");
-            Long itemSellerId = ((Number) sku.get("seller_id")).longValue();
+            Number sellerValue = (Number) sku.get("seller_id");
+            // 兼容历史平台自营商品：未设置商家时固定归属平台（seller_id=0）。
+            Long itemSellerId = sellerValue == null ? 0L : sellerValue.longValue();
+            if (price == null) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "商品价格不存在");
+            }
 
             OrderItem item = new OrderItem();
             item.setId(idGen.nextId());
             item.setSellerId(itemSellerId);
-            item.setSpuId(itemReq.getSpuId());
+            item.setSpuId(((Number) sku.get("spu_id")).longValue());
             item.setSkuId(itemReq.getSkuId());
             item.setProductName(name);
             item.setProductImage((String) sku.get("images"));
@@ -71,9 +91,15 @@ public class OrderServiceImpl implements OrderService {
         }
 
         // 2. 查询地址（user_address 表，简化处理直接用 addressId 拼接）
-        Map<String, Object> addr = jdbcTemplate.queryForMap(
-            "SELECT receiver_name, receiver_phone, CONCAT(province, city, district, detail) AS full_addr FROM user_address WHERE id = ?",
-            request.getAddressId());
+        List<Map<String, Object>> addressRows = jdbcTemplate.queryForList(
+            "SELECT receiver_name, receiver_phone, CONCAT(province, city, district, detail) AS full_addr "
+                + "FROM user_address WHERE id = ? AND user_id = ?",
+            request.getAddressId(), request.getUserId());
+        if (addressRows.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
+                "收货地址不存在或不属于当前用户");
+        }
+        Map<String, Object> addr = addressRows.get(0);
 
         // 3. 创建订单
         Order order = new Order();
@@ -90,11 +116,17 @@ public class OrderServiceImpl implements OrderService {
         order.setUpdateTime(LocalDateTime.now());
         orderMapper.insert(order);
 
-        // 4. 保存明细
-        items.forEach(i -> i.setOrderId(order.getId()));
+        // 4. 按商品归属拆分商家子订单，主订单仅负责一次支付和买家视角。
+        Map<Long, Long> sellerOrderIds = createSellerOrders(order.getId(), items);
+
+        // 5. 保存明细
+        items.forEach(i -> {
+            i.setOrderId(order.getId());
+            i.setSellerOrderId(sellerOrderIds.get(i.getSellerId()));
+        });
         orderItemMapper.insertBatch(items);
 
-        // 5. 预占库存。inventory 是库存唯一来源；兼容旧数据时按 SKU stock 自动初始化。
+        // 6. 预占库存。inventory 是库存唯一来源；兼容旧数据时按 SKU stock 自动初始化。
         for (var itemReq : request.getItems()) {
             ensureInventoryRow(itemReq.getSkuId());
             Map<String, Object> inventory = jdbcTemplate.queryForMap(
@@ -119,7 +151,7 @@ public class OrderServiceImpl implements OrderService {
                 available, available - itemReq.getQuantity());
         }
 
-        // 6. 创建支付单（待支付状态）
+        // 7. 创建支付单（待支付状态）
         jdbcTemplate.update(
             "INSERT INTO payment_info (id, order_no, user_id, amount, pay_type, pay_status, create_time, update_time) "
                 + "VALUES (?, ?, ?, ?, 1, 0, NOW(), NOW())",
@@ -225,6 +257,7 @@ public class OrderServiceImpl implements OrderService {
         if (order.getStatus() != 1 || orderMapper.updateShipment(id, request.getShippingCompany(), request.getTrackingNo()) == 0) {
             throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "仅已支付订单可以发货");
         }
+        sellerOrderMapper.updateShipmentByOrderId(id, request.getShippingCompany(), request.getTrackingNo());
         log.info("管理员发货: id={}, trackingNo={}", id, request.getTrackingNo());
     }
 
@@ -238,31 +271,70 @@ public class OrderServiceImpl implements OrderService {
         if (order.getStatus() != 2 || orderMapper.markReceived(id) == 0) {
             throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "仅已发货订单可以确认收货");
         }
+        sellerOrderMapper.markReceivedByOrderId(id);
         log.info("管理员确认收货: id={}", id);
     }
 
     @Override
     public PageResult<SellerOrderVO> pageForSeller(SellerOrderPageQuery query, Long sellerId) {
         normalizeSellerPageQuery(query);
-        List<Order> orders = orderMapper.selectPageForSeller(sellerId, query);
-        List<SellerOrderVO> records = orders.stream()
-            .map(order -> toSellerVO(order, orderItemMapper.selectByOrderIdAndSellerId(order.getId(), sellerId)))
+        List<SellerOrderVO> records = sellerOrderMapper.selectPageForSeller(sellerId, query).stream()
+            .map(order -> attachSellerItems(order, sellerId))
             .toList();
-        return new PageResult<>(records, orderMapper.countForSeller(sellerId, query),
+        return new PageResult<>(records, sellerOrderMapper.countForSeller(sellerId, query),
             query.getPageNum(), query.getPageSize());
     }
 
     @Override
     public SellerOrderVO getByIdForSeller(Long id, Long sellerId) {
-        Order order = orderMapper.selectById(id);
-        if (order == null) {
-            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "订单不存在");
-        }
-        List<OrderItem> items = orderItemMapper.selectByOrderIdAndSellerId(id, sellerId);
-        if (items.isEmpty()) {
+        SellerOrderVO sellerOrder = sellerOrderMapper.selectDetailForSeller(id, sellerId);
+        if (sellerOrder == null) {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权查看该订单");
         }
-        return toSellerVO(order, items);
+        return attachSellerItems(sellerOrder, sellerId);
+    }
+
+    @Override
+    @Transactional
+    public void shipForSeller(Long sellerOrderId, ShipOrderRequest request, Long sellerId) {
+        SellerOrder sellerOrder = sellerOrderMapper.selectByIdAndSellerId(sellerOrderId, sellerId);
+        if (sellerOrder == null) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权操作该订单");
+        }
+        Order masterOrder = orderMapper.selectById(sellerOrder.getOrderId());
+        if (masterOrder == null || masterOrder.getStatus() != 1
+            || sellerOrderMapper.updateShipment(sellerOrderId, request.getShippingCompany(), request.getTrackingNo()) == 0) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "仅已支付店铺订单可以发货");
+        }
+
+        // 全部店铺均发货后，买家主订单才进入已发货状态。
+        if (sellerOrderMapper.countByOrderIdAndStatus(sellerOrder.getOrderId(), 1) == 0) {
+            orderMapper.updateStatus(sellerOrder.getOrderId(), 2);
+        }
+        log.info("商家发货: sellerOrderId={}, sellerId={}, trackingNo={}",
+            sellerOrderId, sellerId, request.getTrackingNo());
+    }
+
+    @Override
+    public SellerDashboardOverviewVO getDashboardOverview(Long sellerId) {
+        return sellerDashboardMapper.selectOverview(sellerId);
+    }
+
+    @Override
+    public List<SellerDashboardOrderVO> getDashboardRecentOrders(Long sellerId, Integer limit) {
+        return sellerDashboardMapper.selectRecentOrders(sellerId, normalizeDashboardLimit(limit));
+    }
+
+    @Override
+    public List<SellerDashboardStockAlertVO> getDashboardStockAlerts(Long sellerId, Integer limit) {
+        return sellerDashboardMapper.selectStockAlerts(sellerId, normalizeDashboardLimit(limit));
+    }
+
+    private int normalizeDashboardLimit(Integer limit) {
+        if (limit == null || limit < 1) {
+            return 10;
+        }
+        return Math.min(limit, 20);
     }
 
     private String generateOrderNo() {
@@ -303,6 +375,7 @@ public class OrderServiceImpl implements OrderService {
         jdbcTemplate.update("UPDATE payment_info SET pay_status = 3 WHERE order_no = ? AND pay_status = 0",
             order.getOrderNo());
         orderMapper.updateStatus(order.getId(), 4);
+        sellerOrderMapper.updateStatusByOrderId(order.getId(), 4);
     }
 
     private void ensureInventoryRow(Long skuId) {
@@ -333,28 +406,43 @@ public class OrderServiceImpl implements OrderService {
                 .productName(i.getProductName()).productImage(i.getProductImage())
                 .price(i.getPrice()).quantity(i.getQuantity()).totalPrice(i.getTotalPrice())
                 .build()).toList())
+            .sellerOrders(sellerOrderMapper.selectByOrderId(o.getId()).stream().map(sellerOrder -> SellerShipmentVO.builder()
+                .sellerOrderId(sellerOrder.getId()).sellerId(sellerOrder.getSellerId())
+                .status(sellerOrder.getStatus()).shippingCompany(sellerOrder.getShippingCompany())
+                .trackingNo(sellerOrder.getTrackingNo()).shipTime(sellerOrder.getShipTime())
+                .receiveTime(sellerOrder.getReceiveTime()).build()).toList())
             .build();
     }
 
-    private SellerOrderVO toSellerVO(Order order, List<OrderItem> items) {
-        BigDecimal sellerAmount = items.stream()
-            .map(OrderItem::getTotalPrice)
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
-        return SellerOrderVO.builder()
-            .id(order.getId())
-            .orderNo(order.getOrderNo())
-            .sellerAmount(sellerAmount)
-            .status(order.getStatus())
-            .receiverName(order.getReceiverName())
-            .receiverPhone(order.getReceiverPhone())
-            .receiverAddress(order.getReceiverAddress())
-            .remark(order.getRemark())
-            .createTime(order.getCreateTime())
-            .items(items.stream().map(i -> OrderItemVO.builder()
+    private Map<Long, Long> createSellerOrders(Long orderId, List<OrderItem> items) {
+        Map<Long, BigDecimal> sellerAmounts = new LinkedHashMap<>();
+        for (OrderItem item : items) {
+            sellerAmounts.merge(item.getSellerId(), item.getTotalPrice(), BigDecimal::add);
+        }
+
+        Map<Long, Long> sellerOrderIds = new LinkedHashMap<>();
+        for (Map.Entry<Long, BigDecimal> entry : sellerAmounts.entrySet()) {
+            SellerOrder sellerOrder = new SellerOrder();
+            sellerOrder.setId(idGen.nextId());
+            sellerOrder.setOrderId(orderId);
+            sellerOrder.setSellerId(entry.getKey());
+            sellerOrder.setSellerAmount(entry.getValue());
+            sellerOrder.setStatus(0);
+            sellerOrder.setCreateTime(LocalDateTime.now());
+            sellerOrder.setUpdateTime(LocalDateTime.now());
+            sellerOrderMapper.insert(sellerOrder);
+            sellerOrderIds.put(entry.getKey(), sellerOrder.getId());
+        }
+        return sellerOrderIds;
+    }
+
+    private SellerOrderVO attachSellerItems(SellerOrderVO sellerOrder, Long sellerId) {
+        List<OrderItem> items = orderItemMapper.selectByOrderIdAndSellerId(sellerOrder.getOrderId(), sellerId);
+        sellerOrder.setItems(items.stream().map(i -> OrderItemVO.builder()
                 .id(i.getId()).spuId(i.getSpuId()).skuId(i.getSkuId())
                 .productName(i.getProductName()).productImage(i.getProductImage())
                 .price(i.getPrice()).quantity(i.getQuantity()).totalPrice(i.getTotalPrice())
-                .build()).toList())
-            .build();
+                .build()).toList());
+        return sellerOrder;
     }
 }

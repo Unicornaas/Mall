@@ -33,4 +33,10 @@ public interface ProductSpuService {
     PageResult<ProductSpu> pageForSeller(SellerProductPageQuery query, Long sellerId);
 
     ProductSpu getByIdForSeller(Long id, Long sellerId);
+
+    void addForSeller(SpuRequest request, Long sellerId);
+
+    void updateForSeller(Long id, SpuRequest request, Long sellerId);
+
+    void updateStatusForSeller(Long id, Integer status, Long sellerId);
 }

@@ -17,4 +17,6 @@ public interface InventoryService {
     PageResult<AdminInventoryVO> pageForAdmin(AdminInventoryPageQuery query);
     PageResult<SellerInventoryVO> pageForSeller(SellerInventoryPageQuery query, Long sellerId);
     List<InventoryLogVO> queryLogForSeller(Long skuId, Long sellerId);
+    void addForSeller(Long skuId, Integer quantity, Long sellerId);
+    void updateSafetyStockForSeller(Long skuId, Integer safetyStock, Long sellerId);
 }

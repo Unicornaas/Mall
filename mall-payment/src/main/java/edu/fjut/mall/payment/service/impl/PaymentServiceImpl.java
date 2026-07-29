@@ -101,6 +101,9 @@ public class PaymentServiceImpl implements PaymentService {
 
         // 同步更新订单状态为已支付
         jdbcTemplate.update("UPDATE order_t SET status = 1 WHERE order_no = ?", orderNo);
+        jdbcTemplate.update(
+            "UPDATE seller_order_t SET status = 1, update_time = NOW() "
+                + "WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?) AND status = 0", orderNo);
 
         log.info("支付成功: orderNo={}, tradeNo={}", orderNo, tradeNo);
         return toVO(info);
@@ -130,6 +133,9 @@ public class PaymentServiceImpl implements PaymentService {
         if (info == null) throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "支付单不存在");
         if (info.getPayStatus() != 1)
             throw new BusinessException(ResultCode.PAYMENT_FAILED.getCode(), "仅已支付的订单可申请退款");
+        if (hasShippedSellerOrder(request.getOrderNo())) {
+            throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "订单已有店铺发货，不能申请整单退款");
+        }
         if (request.getRefundAmount().compareTo(info.getAmount()) > 0)
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款金额不能超过支付金额");
         if (request.getRefundAmount().compareTo(info.getAmount()) != 0)
@@ -184,11 +190,17 @@ public class PaymentServiceImpl implements PaymentService {
             if (info == null || info.getPayStatus() != 1) {
                 throw new BusinessException(ResultCode.PAYMENT_FAILED.getCode(), "支付单当前不可退款");
             }
+            if (hasShippedSellerOrder(refund.getOrderNo())) {
+                throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "订单已有店铺发货，不能执行整单退款");
+            }
             int orderRows = jdbcTemplate.update(
                 "UPDATE order_t SET status = 4 WHERE order_no = ? AND status = 1", refund.getOrderNo());
             if (orderRows == 0) {
                 throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "订单已发货或状态已变化，不能执行退款");
             }
+            jdbcTemplate.update(
+                "UPDATE seller_order_t SET status = 4, update_time = NOW() "
+                    + "WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?) AND status = 1", refund.getOrderNo());
             restoreInventory(refund.getOrderNo());
             paymentInfoMapper.updateStatus(info.getId(), 2);
             log.info("退款成功: refundId={}, orderNo={}, amount={}", refundId, refund.getOrderNo(), refund.getRefundAmount());
@@ -253,6 +265,14 @@ public class PaymentServiceImpl implements PaymentService {
                     + "SELECT ?, sku_id, ?, 'REFUND', ?, available_stock - ?, available_stock FROM inventory WHERE sku_id = ?",
                 idGen.nextId(), orderNo, quantity, quantity, skuId);
         }
+    }
+
+    private boolean hasShippedSellerOrder(String orderNo) {
+        Integer count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(1) FROM seller_order_t WHERE order_id = "
+                + "(SELECT id FROM order_t WHERE order_no = ?) AND status IN (2, 3)",
+            Integer.class, orderNo);
+        return count != null && count > 0;
     }
 
     private void normalizePageQuery(PageQuery query) {

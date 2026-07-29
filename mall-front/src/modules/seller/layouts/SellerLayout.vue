@@ -7,9 +7,9 @@
       </div>
       <el-menu :default-active="route.path" class="seller-menu" background-color="transparent" text-color="#9ba4b5" active-text-color="#ffffff" router>
         <el-menu-item index="/seller/dashboard"><el-icon><DataAnalysis /></el-icon><span>经营概览</span></el-menu-item>
-        <el-menu-item disabled><el-icon><Goods /></el-icon><span>我的商品</span></el-menu-item>
-        <el-menu-item disabled><el-icon><Box /></el-icon><span>库存管理</span></el-menu-item>
-        <el-menu-item disabled><el-icon><Tickets /></el-icon><span>店铺订单</span></el-menu-item>
+        <el-menu-item index="/seller/products"><el-icon><Goods /></el-icon><span>我的商品</span></el-menu-item>
+        <el-menu-item index="/seller/inventory"><el-icon><Box /></el-icon><span>库存管理</span></el-menu-item>
+        <el-menu-item index="/seller/orders"><el-icon><Tickets /></el-icon><span>店铺订单</span></el-menu-item>
       </el-menu>
       <div class="sidebar-note"><span class="status-dot"></span>商家服务运行中</div>
     </aside>

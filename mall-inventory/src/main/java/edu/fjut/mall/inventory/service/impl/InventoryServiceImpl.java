@@ -182,6 +182,39 @@ public class InventoryServiceImpl implements InventoryService {
         return queryLog(skuId);
     }
 
+    @Override
+    @Transactional
+    public void addForSeller(Long skuId, Integer quantity, Long sellerId) {
+        requireSellerSku(skuId, sellerId);
+        add(skuId, quantity);
+        log.info("商家补货: sellerId={}, skuId={}, quantity={}", sellerId, skuId, quantity);
+    }
+
+    @Override
+    @Transactional
+    public void updateSafetyStockForSeller(Long skuId, Integer safetyStock, Long sellerId) {
+        requireSellerSku(skuId, sellerId);
+        if (safetyStock == null || safetyStock < 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "安全库存不能小于0");
+        }
+
+        Inventory inventory = inventoryMapper.selectBySkuId(skuId);
+        if (inventory == null) {
+            Integer currentStock = inventoryMapper.selectSkuDisplayStock(skuId);
+            if (currentStock == null) {
+                throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "SKU不存在");
+            }
+            InventoryInitRequest initRequest = new InventoryInitRequest();
+            initRequest.setSkuId(skuId);
+            initRequest.setTotalStock(currentStock);
+            initRequest.setSafetyStock(safetyStock);
+            init(initRequest);
+        } else {
+            inventoryMapper.updateSafetyStock(skuId, safetyStock);
+        }
+        log.info("商家更新安全库存: sellerId={}, skuId={}, safetyStock={}", sellerId, skuId, safetyStock);
+    }
+
     private void normalizePageQuery(AdminInventoryPageQuery query) {
         if (query.getPageNum() < 1) {
             query.setPageNum(1);
@@ -190,6 +223,12 @@ public class InventoryServiceImpl implements InventoryService {
             query.setPageSize(20);
         } else if (query.getPageSize() > 100) {
             query.setPageSize(100);
+        }
+    }
+
+    private void requireSellerSku(Long skuId, Long sellerId) {
+        if (inventoryMapper.countSkuBySeller(skuId, sellerId) == 0) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权操作该 SKU 的库存");
         }
     }
 

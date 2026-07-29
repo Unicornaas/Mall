@@ -112,4 +112,58 @@ public class ProductSpuServiceImpl implements ProductSpuService {
         }
         return spu;
     }
+
+    @Override
+    @Transactional
+    public void addForSeller(SpuRequest request, Long sellerId) {
+        ProductSpu spu = new ProductSpu();
+        spu.setId(snowflakeIdGenerator.nextId());
+        spu.setSellerId(sellerId);
+        spu.setCategoryId(request.getCategoryId());
+        spu.setName(request.getName());
+        spu.setDescription(request.getDescription());
+        spu.setBrand(request.getBrand());
+        spu.setMainImage(request.getMainImage());
+        spu.setImages(request.getImages());
+        spu.setStatus(0);
+        spu.setCreateTime(LocalDateTime.now());
+        spu.setUpdateTime(LocalDateTime.now());
+
+        spuMapper.insert(spu);
+        log.info("商家新增SPU: id={}, sellerId={}, name={}", spu.getId(), sellerId, spu.getName());
+    }
+
+    @Override
+    @Transactional
+    public void updateForSeller(Long id, SpuRequest request, Long sellerId) {
+        getByIdForSeller(id, sellerId);
+
+        ProductSpu spu = new ProductSpu();
+        spu.setId(id);
+        spu.setCategoryId(request.getCategoryId());
+        spu.setName(request.getName());
+        spu.setDescription(request.getDescription());
+        spu.setBrand(request.getBrand());
+        spu.setMainImage(request.getMainImage());
+        spu.setImages(request.getImages());
+        spu.setUpdateTime(LocalDateTime.now());
+
+        spuMapper.updateById(spu);
+        log.info("商家更新SPU: id={}, sellerId={}", id, sellerId);
+    }
+
+    @Override
+    @Transactional
+    public void updateStatusForSeller(Long id, Integer status, Long sellerId) {
+        validateStatus(status);
+        getByIdForSeller(id, sellerId);
+        spuMapper.updateStatus(id, status);
+        log.info("商家更新SPU状态: id={}, sellerId={}, status={}", id, sellerId, status);
+    }
+
+    private void validateStatus(Integer status) {
+        if (status == null || (status != 0 && status != 1)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "商品状态只能为0或1");
+        }
+    }
 }

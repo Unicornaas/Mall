@@ -73,6 +73,20 @@
         </div>
       </section>
 
+      <section v-if="order.sellerOrders?.length" class="info-card">
+        <h3 class="card-title">店铺配送</h3>
+        <div v-for="shipment in order.sellerOrders" :key="shipment.sellerOrderId" class="shipment-row">
+          <div>
+            <strong>店铺订单 {{ shipment.sellerOrderId }}</strong>
+            <span>{{ sellerShipmentStatus(shipment.status) }}</span>
+          </div>
+          <div class="shipment-detail">
+            <span>{{ shipment.shippingCompany ? `${shipment.shippingCompany} · ${shipment.trackingNo}` : '暂未发货' }}</span>
+            <small v-if="shipment.shipTime">发货时间：{{ shipment.shipTime }}</small>
+          </div>
+        </div>
+      </section>
+
       <!-- 操作 -->
       <div v-if="order.status === 0" class="action-bar">
         <button class="action-btn danger" @click="handleCancel">取消订单</button>
@@ -118,6 +132,7 @@ const refundRules = { reason: [{ required: true, message: '请填写退款原因
 
 const statusMap = { 0: '待付款', 1: '已付款', 2: '已发货', 3: '已收货', 4: '已取消', 5: '已关闭' }
 const statusText = (s) => statusMap[s] || '未知'
+const sellerShipmentStatus = (s) => ({ 0: '待支付', 1: '待发货', 2: '已发货', 3: '已完成', 4: '已取消' }[Number(s)] || '未知')
 const refundStatusText = (s) => ({ 0: '退款审核中', 1: '退款已完成', 2: '退款申请被拒绝' }[Number(s)] || '退款状态未知')
 
 const formatPrice = (val) => {
@@ -324,6 +339,7 @@ onMounted(fetchDetail)
 .col-price { color: #777; }
 .col-qty { color: #aaa; text-align: center; }
 .col-sub { font-weight: 600; color: #333; text-align: right; }
+.shipment-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; }.shipment-row + .shipment-row { border-top: 1px dashed #f0efed; }.shipment-row strong, .shipment-row span, .shipment-detail small { display: block; }.shipment-row strong { color: #444; font-size: 13px; }.shipment-row > div > span { margin-top: 4px; color: #888; font-size: 12px; }.shipment-detail { text-align: right; color: #555; font-size: 13px; }.shipment-detail small { margin-top: 4px; color: #aaa; font-size: 12px; }
 
 /* 操作栏 */
 .action-bar {
@@ -378,5 +394,6 @@ onMounted(fetchDetail)
   }
 
   .item-header { font-size: 11px; }
+  .shipment-row { align-items: flex-start; flex-direction: column; gap: 6px; }.shipment-detail { text-align: left; }
 }
 </style>

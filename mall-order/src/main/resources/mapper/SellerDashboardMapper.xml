@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="edu.fjut.mall.order.mapper.SellerDashboardMapper">
+
+    <select id="selectOverview" resultType="edu.fjut.mall.order.dto.SellerDashboardOverviewVO">
+        SELECT
+            (SELECT COUNT(*)
+             FROM product_spu p
+             WHERE p.seller_id = #{sellerId}) AS productCount,
+            (SELECT COUNT(*)
+             FROM product_spu p
+             WHERE p.seller_id = #{sellerId} AND p.status = 1) AS onSaleProductCount,
+            (SELECT COUNT(*)
+             FROM product_spu p
+             WHERE p.seller_id = #{sellerId} AND p.status = 0) AS offSaleProductCount,
+            (SELECT COUNT(*)
+             FROM product_sku s
+             INNER JOIN product_spu p ON p.id = s.spu_id
+             WHERE p.seller_id = #{sellerId}) AS skuCount,
+            (SELECT COUNT(*)
+             FROM product_sku s
+             INNER JOIN product_spu p ON p.id = s.spu_id
+             LEFT JOIN inventory i ON i.sku_id = s.id
+             WHERE p.seller_id = #{sellerId}
+               AND COALESCE(i.available_stock, s.stock) &lt;= COALESCE(i.safety_stock, 10)) AS warningStockCount,
+            (SELECT COUNT(*)
+             FROM seller_order_t so
+             WHERE so.seller_id = #{sellerId} AND so.status = 1) AS pendingShipmentOrderCount,
+            (SELECT COUNT(*)
+             FROM seller_order_t so
+             WHERE so.seller_id = #{sellerId}
+               AND DATE(so.create_time) = CURDATE()) AS todayOrderCount,
+            COALESCE((SELECT SUM(so.seller_amount)
+             FROM seller_order_t so
+             INNER JOIN order_t o ON o.id = so.order_id
+             INNER JOIN payment_info pay ON pay.order_no = o.order_no AND pay.pay_status = 1
+             WHERE so.seller_id = #{sellerId}
+               AND DATE(pay.pay_time) = CURDATE()), 0.00) AS todaySalesAmount
+    </select>
+
+    <select id="selectRecentOrders" resultType="edu.fjut.mall.order.dto.SellerDashboardOrderVO">
+        SELECT so.id AS id,
+               o.order_no AS orderNo,
+               so.seller_amount AS sellerAmount,
+               so.status AS status,
+               o.receiver_name AS receiverName,
+               pay.pay_time AS paymentTime,
+               so.create_time AS createTime
+        FROM seller_order_t so
+        INNER JOIN order_t o ON o.id = so.order_id
+        LEFT JOIN payment_info pay ON pay.order_no = o.order_no AND pay.pay_status = 1
+        WHERE so.seller_id = #{sellerId}
+        ORDER BY so.create_time DESC, so.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectStockAlerts" resultType="edu.fjut.mall.order.dto.SellerDashboardStockAlertVO">
+        SELECT s.id AS skuId,
+               s.sku_code AS skuCode,
+               s.name AS skuName,
+               p.name AS productName,
+               COALESCE(i.available_stock, s.stock) AS availableStock,
+               COALESCE(i.safety_stock, 10) AS safetyStock
+        FROM product_sku s
+        INNER JOIN product_spu p ON p.id = s.spu_id
+        LEFT JOIN inventory i ON i.sku_id = s.id
+        WHERE p.seller_id = #{sellerId}
+          AND COALESCE(i.available_stock, s.stock) &lt;= COALESCE(i.safety_stock, 10)
+        ORDER BY availableStock ASC, s.id DESC
+        LIMIT #{limit}
+    </select>
+</mapper>

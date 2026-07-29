@@ -147,6 +147,10 @@ const fetchData = async () => {
 }
 
 const handleSubmit = async () => {
+  if (!selectedAddressId.value) {
+    ElMessage.warning('请先添加并选择收货地址')
+    return
+  }
   submitting.value = true
   try {
     const orderItems = items.value.map(i => ({

@@ -21,8 +21,16 @@
         SELECT * FROM product_sku WHERE spu_id = #{spuId} ORDER BY id ASC
     </select>
 
+    <select id="selectEnabledBySpuId" resultMap="BaseResultMap">
+        SELECT * FROM product_sku WHERE spu_id = #{spuId} AND status = 1 ORDER BY id ASC
+    </select>
+
     <select id="selectById" resultMap="BaseResultMap">
         SELECT * FROM product_sku WHERE id = #{id}
+    </select>
+
+    <select id="selectEnabledById" resultMap="BaseResultMap">
+        SELECT * FROM product_sku WHERE id = #{id} AND status = 1
     </select>
 
     <insert id="insert">
@@ -47,6 +55,10 @@
     <delete id="deleteById">
         DELETE FROM product_sku WHERE id = #{id}
     </delete>
+
+    <update id="updateStatus">
+        UPDATE product_sku SET status = #{status} WHERE id = #{id}
+    </update>
 
     <update id="deductStock">
         UPDATE product_sku SET stock = stock - #{count}

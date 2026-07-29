@@ -2,6 +2,8 @@ package edu.fjut.mall.order.dto;
 
 import lombok.Builder;
 import lombok.Data;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -13,9 +15,12 @@ import java.util.List;
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class SellerOrderVO {
 
     private Long id;
+    private Long orderId;
     private String orderNo;
     private BigDecimal sellerAmount;
     private Integer status;
@@ -23,6 +28,11 @@ public class SellerOrderVO {
     private String receiverPhone;
     private String receiverAddress;
     private String remark;
+    private String shippingCompany;
+    private String trackingNo;
+    private LocalDateTime paymentTime;
+    private LocalDateTime shipTime;
+    private LocalDateTime receiveTime;
     private LocalDateTime createTime;
     private List<OrderVO.OrderItemVO> items;
 }

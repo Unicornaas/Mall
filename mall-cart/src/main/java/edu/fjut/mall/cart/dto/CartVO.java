@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 public class CartVO {
     private Long id;
     private Long userId;
+    private Long spuId;
     private Long skuId;
     private String productName;
     private String productImage;

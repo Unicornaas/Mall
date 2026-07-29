@@ -36,7 +36,7 @@ public class CartServiceImpl implements CartService {
         Map<String, Object> sku;
         try {
             sku = jdbcTemplate.queryForMap(
-                "SELECT id, name, price, images FROM product_sku WHERE id = ?", request.getSkuId());
+                "SELECT id, spu_id, name, price, images FROM product_sku WHERE id = ?", request.getSkuId());
         } catch (Exception e) {
             throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "商品SKU不存在");
         }
@@ -74,7 +74,7 @@ public class CartServiceImpl implements CartService {
         for (Cart cart : carts) {
             try {
                 Map<String, Object> sku = jdbcTemplate.queryForMap(
-                    "SELECT id, name, price, images FROM product_sku WHERE id = ?", cart.getSkuId());
+                    "SELECT id, spu_id, name, price, images FROM product_sku WHERE id = ?", cart.getSkuId());
                 vos.add(toVO(cart, sku));
             } catch (Exception e) {
                 log.warn("购物车中SKU {} 已失效，跳过", cart.getSkuId());
@@ -95,7 +95,7 @@ public class CartServiceImpl implements CartService {
         cart.setQuantity(quantity);
 
         Map<String, Object> sku = jdbcTemplate.queryForMap(
-            "SELECT id, name, price, images FROM product_sku WHERE id = ?", cart.getSkuId());
+            "SELECT id, spu_id, name, price, images FROM product_sku WHERE id = ?", cart.getSkuId());
         log.info("购物车数量修改: cartId={}, quantity={}", id, quantity);
         return toVO(cart, sku);
     }
@@ -112,7 +112,7 @@ public class CartServiceImpl implements CartService {
         cart.setSelected(selected);
 
         Map<String, Object> sku = jdbcTemplate.queryForMap(
-            "SELECT id, name, price, images FROM product_sku WHERE id = ?", cart.getSkuId());
+            "SELECT id, spu_id, name, price, images FROM product_sku WHERE id = ?", cart.getSkuId());
         log.info("购物车选中状态修改: cartId={}, selected={}", id, selected);
         return toVO(cart, sku);
     }
@@ -153,6 +153,7 @@ public class CartServiceImpl implements CartService {
         return CartVO.builder()
             .id(cart.getId())
             .userId(cart.getUserId())
+            .spuId(((Number) sku.get("spu_id")).longValue())
             .skuId(cart.getSkuId())
             .productName((String) sku.get("name"))
             .productImage((String) sku.get("images"))

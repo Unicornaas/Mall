@@ -23,13 +23,13 @@ public class ProductSkuController {
     /** 按 SPU 查询 SKU 列表 */
     @GetMapping("/spu/{spuId}")
     public Result<List<ProductSku>> listBySpu(@PathVariable Long spuId) {
-        return Result.success(skuService.listBySpuId(spuId));
+        return Result.success(skuService.listEnabledBySpuId(spuId));
     }
 
     /** SKU 详情 */
     @GetMapping("/{id}")
     public Result<ProductSku> getById(@PathVariable Long id) {
-        return Result.success(skuService.getById(id));
+        return Result.success(skuService.getEnabledById(id));
     }
 
     /** 新增 SKU */

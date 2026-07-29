@@ -6,6 +6,9 @@ import edu.fjut.mall.order.dto.AdminOrderPageQuery;
 import edu.fjut.mall.order.dto.ShipOrderRequest;
 import edu.fjut.mall.order.dto.SellerOrderPageQuery;
 import edu.fjut.mall.order.dto.SellerOrderVO;
+import edu.fjut.mall.order.dto.SellerDashboardOrderVO;
+import edu.fjut.mall.order.dto.SellerDashboardOverviewVO;
+import edu.fjut.mall.order.dto.SellerDashboardStockAlertVO;
 import edu.fjut.mall.common.page.PageResult;
 
 import java.util.List;
@@ -22,4 +25,8 @@ public interface OrderService {
     void receiveForAdmin(Long id);
     PageResult<SellerOrderVO> pageForSeller(SellerOrderPageQuery query, Long sellerId);
     SellerOrderVO getByIdForSeller(Long id, Long sellerId);
+    void shipForSeller(Long sellerOrderId, ShipOrderRequest request, Long sellerId);
+    SellerDashboardOverviewVO getDashboardOverview(Long sellerId);
+    List<SellerDashboardOrderVO> getDashboardRecentOrders(Long sellerId, Integer limit);
+    List<SellerDashboardStockAlertVO> getDashboardStockAlerts(Long sellerId, Integer limit);
 }

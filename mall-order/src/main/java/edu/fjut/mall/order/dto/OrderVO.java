@@ -25,6 +25,8 @@ public class OrderVO {
     private LocalDateTime createTime;
     private List<OrderItemVO> items;
 
+    private List<SellerShipmentVO> sellerOrders;
+
     @Data
     @Builder
     public static class OrderItemVO {

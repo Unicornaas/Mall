@@ -30,7 +30,16 @@ request.interceptors.response.use(
     return Promise.reject(new Error(data.message))
   },
   (error) => {
-    ElMessage.error('网络错误，请稍后重试')
+    const status = error.response?.status
+    const responseData = error.response?.data
+    const message = responseData?.message
+      || (status ? `请求失败（${status}）` : '网络错误，请稍后重试')
+    ElMessage.error(message)
+    if (status === 401) {
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      router.push('/login')
+    }
     return Promise.reject(error)
   }
 )

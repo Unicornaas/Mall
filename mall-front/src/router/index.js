@@ -65,6 +65,9 @@ const routes = [
     children: [
       { path: '', redirect: '/seller/dashboard' },
       { path: 'dashboard', name: 'SellerDashboard', component: () => import('../modules/seller/views/SellerDashboard.vue'), meta: { title: '经营概览' } },
+      { path: 'products', name: 'SellerProductManagement', component: () => import('../modules/seller/views/SellerProductManagement.vue'), meta: { title: '我的商品' } },
+      { path: 'inventory', name: 'SellerInventoryManagement', component: () => import('../modules/seller/views/SellerInventoryManagement.vue'), meta: { title: '库存管理' } },
+      { path: 'orders', name: 'SellerOrderManagement', component: () => import('../modules/seller/views/SellerOrderManagement.vue'), meta: { title: '店铺订单' } },
     ],
   },
   {

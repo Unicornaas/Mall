@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="edu.fjut.mall.order.mapper.SellerOrderMapper">
+
+    <resultMap id="BaseResultMap" type="edu.fjut.mall.order.entity.SellerOrder">
+        <id column="id" property="id"/>
+        <result column="order_id" property="orderId"/>
+        <result column="seller_id" property="sellerId"/>
+        <result column="seller_amount" property="sellerAmount"/>
+        <result column="status" property="status"/>
+        <result column="shipping_company" property="shippingCompany"/>
+        <result column="tracking_no" property="trackingNo"/>
+        <result column="ship_time" property="shipTime"/>
+        <result column="receive_time" property="receiveTime"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO seller_order_t (id, order_id, seller_id, seller_amount, status,
+                                    shipping_company, tracking_no, ship_time, receive_time)
+        VALUES (#{id}, #{orderId}, #{sellerId}, #{sellerAmount}, #{status},
+                #{shippingCompany}, #{trackingNo}, #{shipTime}, #{receiveTime})
+    </insert>
+
+    <select id="selectByIdAndSellerId" resultMap="BaseResultMap">
+        SELECT * FROM seller_order_t WHERE id = #{id} AND seller_id = #{sellerId}
+    </select>
+
+    <select id="selectByOrderId" resultMap="BaseResultMap">
+        SELECT * FROM seller_order_t WHERE order_id = #{orderId}
+    </select>
+
+    <sql id="SellerOrderWhere">
+        <where>
+            so.seller_id = #{sellerId}
+            <if test="query.orderNo != null and query.orderNo != ''">
+                AND o.order_no LIKE CONCAT('%', #{query.orderNo}, '%')
+            </if>
+            <if test="query.status != null">AND so.status = #{query.status}</if>
+        </where>
+    </sql>
+
+    <sql id="SellerOrderColumns">
+        so.id AS id, so.order_id AS orderId, o.order_no AS orderNo,
+        so.seller_amount AS sellerAmount, so.status AS status,
+        o.receiver_name AS receiverName, o.receiver_phone AS receiverPhone,
+        o.receiver_address AS receiverAddress, o.remark AS remark,
+        so.shipping_company AS shippingCompany, so.tracking_no AS trackingNo,
+        so.ship_time AS shipTime, so.receive_time AS receiveTime,
+        pay.pay_time AS paymentTime, so.create_time AS createTime
+    </sql>
+
+    <select id="selectPageForSeller" resultType="edu.fjut.mall.order.dto.SellerOrderVO">
+        SELECT <include refid="SellerOrderColumns"/>
+        FROM seller_order_t so
+        INNER JOIN order_t o ON o.id = so.order_id
+        LEFT JOIN payment_info pay ON pay.order_no = o.order_no AND pay.pay_status = 1
+        <include refid="SellerOrderWhere"/>
+        ORDER BY so.create_time DESC, so.id DESC
+        LIMIT #{query.offset}, #{query.pageSize}
+    </select>
+
+    <select id="countForSeller" resultType="long">
+        SELECT COUNT(1)
+        FROM seller_order_t so
+        INNER JOIN order_t o ON o.id = so.order_id
+        <include refid="SellerOrderWhere"/>
+    </select>
+
+    <select id="selectDetailForSeller" resultType="edu.fjut.mall.order.dto.SellerOrderVO">
+        SELECT <include refid="SellerOrderColumns"/>
+        FROM seller_order_t so
+        INNER JOIN order_t o ON o.id = so.order_id
+        LEFT JOIN payment_info pay ON pay.order_no = o.order_no AND pay.pay_status = 1
+        WHERE so.id = #{id} AND so.seller_id = #{sellerId}
+    </select>
+
+    <update id="updateShipment">
+        UPDATE seller_order_t
+        SET status = 2, shipping_company = #{shippingCompany}, tracking_no = #{trackingNo}, ship_time = NOW()
+        WHERE id = #{id} AND status = 1
+    </update>
+
+    <update id="updateShipmentByOrderId">
+        UPDATE seller_order_t
+        SET status = 2, shipping_company = #{shippingCompany}, tracking_no = #{trackingNo}, ship_time = NOW()
+        WHERE order_id = #{orderId} AND status = 1
+    </update>
+
+    <update id="updateStatusByOrderId">
+        UPDATE seller_order_t SET status = #{status}
+        WHERE order_id = #{orderId} AND status IN (0, 1)
+    </update>
+
+    <update id="markReceivedByOrderId">
+        UPDATE seller_order_t SET status = 3, receive_time = NOW()
+        WHERE order_id = #{orderId} AND status = 2
+    </update>
+
+    <select id="countByOrderIdAndStatus" resultType="int">
+        SELECT COUNT(1) FROM seller_order_t WHERE order_id = #{orderId} AND status = #{status}
+    </select>
+</mapper>
