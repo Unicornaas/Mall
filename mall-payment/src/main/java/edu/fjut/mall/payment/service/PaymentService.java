@@ -11,6 +11,7 @@ public interface PaymentService {
     PaymentVO queryStatus(String orderNo, Long userId);
     RefundVO refund(RefundRequest request);
     RefundVO queryRefundStatus(String orderNo, Long userId);
+    List<RefundVO> listRefunds(String orderNo, Long userId);
     RefundVO processRefund(Long refundId, Integer refundStatus);
     List<PaymentVO> page(Integer pageNum, Integer pageSize);
     RefundVO processRefund(Long refundId, Integer refundStatus, String processRemark, Long processorId);

@@ -67,7 +67,7 @@
               <span>{{ item.productName }}</span>
             </div>
             <span class="col-price">¥{{ formatPrice(item.price) }}</span>
-            <span class="col-qty">x{{ item.quantity }}</span>
+            <span class="col-qty">x{{ item.quantity }}<small v-if="item.refundedQuantity">已退 {{ item.refundedQuantity }}</small><small v-if="item.shippedQuantity">已发 {{ item.shippedQuantity }}</small><small v-if="item.trackingNo">{{ item.shippingCompany }} · {{ item.trackingNo }}</small></span>
             <span class="col-sub">¥{{ (item.price * item.quantity).toFixed(2) }}</span>
           </div>
         </div>
@@ -92,61 +92,79 @@
         <button class="action-btn danger" @click="handleCancel">取消订单</button>
         <button class="action-btn primary" @click="$router.push(`/payment/${order.id}`)">去支付</button>
       </div>
-      <div v-else-if="order.status === 1" class="action-bar">
-        <button v-if="refundInfo?.refundStatus !== 0" class="action-btn refund" @click="openRefundDialog">{{ refundInfo?.refundStatus === 2 ? '重新申请退款' : '申请退款' }}</button>
-        <button v-else class="action-btn pending" disabled>退款审核中</button>
+      <div v-else-if="canApplyRefund" class="action-bar">
+        <button class="action-btn refund" @click="openRefundDialog">{{ refundInfos.some(item => item.refundStatus === 0) ? '继续申请退款' : '申请退款' }}</button>
       </div>
 
-      <div v-if="refundInfo" class="refund-status" :class="`refund-status-${refundInfo.refundStatus}`">
-        <strong>{{ refundStatusText(refundInfo.refundStatus) }}</strong>
-        <span v-if="refundInfo.refundStatus === 0">退款申请已提交，请等待管理员审核。</span>
-        <span v-else-if="refundInfo.refundStatus === 2">退款申请被拒绝{{ refundInfo.processRemark ? `：${refundInfo.processRemark}` : '。' }}</span>
+      <div v-for="refund in refundInfos" :key="refund.id" class="refund-status" :class="`refund-status-${refund.refundStatus}`">
+        <strong>{{ refundStatusText(refund.refundStatus) }}</strong>
+        <span>{{ refundItemText(refund.items) }}，退款 ¥{{ formatPrice(refund.refundAmount) }}。</span>
+        <span v-if="refund.refundStatus === 0">申请已提交，请等待管理员审核。</span>
+        <span v-else-if="refund.refundStatus === 2">申请被拒绝{{ refund.processRemark ? `：${refund.processRemark}` : '。' }}</span>
       </div>
     </template>
 
-    <el-dialog v-model="refundDialog.visible" title="申请退款" width="460px" destroy-on-close>
-      <p class="refund-hint">当前仅支持已支付、未发货订单的整单退款。申请提交后请等待管理员审核。</p>
-      <el-form ref="refundFormRef" :model="refundDialog.form" :rules="refundRules" label-width="78px"><el-form-item label="退款金额"><span class="refund-amount">¥{{ formatPrice(order?.totalAmount) }}</span></el-form-item><el-form-item label="退款原因" prop="reason"><el-input v-model="refundDialog.form.reason" type="textarea" :rows="4" maxlength="500" show-word-limit placeholder="请说明退款原因" /></el-form-item></el-form>
+    <el-dialog v-model="refundDialog.visible" title="申请退款" width="620px" destroy-on-close>
+      <p class="refund-hint">请选择需要退款的商品和数量。已发货数量暂不支持直接退款，退款金额由系统按实际成交价计算。</p>
+      <el-form ref="refundFormRef" :model="refundDialog.form" :rules="refundRules" label-width="78px">
+        <el-form-item label="退款商品">
+          <div class="refund-items">
+            <div v-for="item in refundDialog.form.items" :key="item.id" class="refund-item-row">
+              <el-checkbox v-model="item.selected" :disabled="item.availableRefundQuantity < 1">{{ item.productName }}</el-checkbox>
+              <span>可退 {{ item.availableRefundQuantity }}</span>
+              <el-input-number v-model="item.quantity" :min="1" :max="item.availableRefundQuantity" :disabled="!item.selected" controls-position="right" />
+              <strong>¥{{ formatPrice(item.price * item.quantity) }}</strong>
+            </div>
+          </div>
+        </el-form-item>
+        <el-form-item label="退款合计"><span class="refund-amount">¥{{ formatPrice(refundTotal) }}</span></el-form-item>
+        <el-form-item label="退款原因" prop="reason"><el-input v-model="refundDialog.form.reason" type="textarea" :rows="4" maxlength="500" show-word-limit placeholder="请说明退款原因" /></el-form-item>
+      </el-form>
       <template #footer><el-button @click="refundDialog.visible = false">取消</el-button><el-button type="primary" :loading="refundDialog.submitting" @click="submitRefund">提交申请</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Goods } from '@element-plus/icons-vue'
 import { useUserStore } from '../../../stores/user'
 import { getOrderDetail, cancelOrder } from '../api/order'
-import { applyRefund, getRefundStatus } from '../api/payment'
+import { applyRefund, getRefundList } from '../api/payment'
 
 const route = useRoute()
 const store = useUserStore()
 const loading = ref(false)
 const order = ref(null)
-const refundInfo = ref(null)
+const refundInfos = ref([])
 const refundFormRef = ref()
-const refundDialog = ref({ visible: false, submitting: false, form: { reason: '' } })
+const refundDialog = ref({ visible: false, submitting: false, form: { reason: '', items: [] } })
 const refundRules = { reason: [{ required: true, message: '请填写退款原因', trigger: 'blur' }] }
 
-const statusMap = { 0: '待付款', 1: '已付款', 2: '已发货', 3: '已收货', 4: '已取消', 5: '已关闭' }
+const statusMap = { 0: '待付款', 1: '已付款', 2: '已发货', 3: '已收货', 4: '已取消', 5: '部分发货' }
 const statusText = (s) => statusMap[s] || '未知'
-const sellerShipmentStatus = (s) => ({ 0: '待支付', 1: '待发货', 2: '已发货', 3: '已完成', 4: '已取消' }[Number(s)] || '未知')
+const sellerShipmentStatus = (s) => ({ 0: '待支付', 1: '待发货', 2: '已发货', 3: '已完成', 4: '已取消', 5: '部分发货' }[Number(s)] || '未知')
 const refundStatusText = (s) => ({ 0: '退款审核中', 1: '退款已完成', 2: '退款申请被拒绝' }[Number(s)] || '退款状态未知')
+const refundItemText = (items) => (items || []).map(item => `${item.productName} x${item.quantity}`).join('、') || '退款商品'
 
 const formatPrice = (val) => {
   const n = Number(val)
   return Number.isInteger(n) ? String(n) : n.toFixed(2)
 }
 
+const refundableItems = computed(() => (order.value?.items || []).filter(item => Number(item.availableRefundQuantity ?? (item.quantity - (item.shippedQuantity || 0) - (item.refundedQuantity || 0))) > 0))
+const canApplyRefund = computed(() => [1, 5].includes(Number(order.value?.status)) && refundableItems.value.length > 0)
+const refundTotal = computed(() => refundDialog.value.form.items.filter(item => item.selected).reduce((total, item) => total + Number(item.price) * Number(item.quantity), 0))
+
 const fetchDetail = async () => {
   loading.value = true
   try {
     const res = await getOrderDetail(route.params.id)
     order.value = res.data
-    const refundRes = await getRefundStatus(order.value.orderNo)
-    refundInfo.value = refundRes.data
+    const refundRes = await getRefundList(order.value.orderNo)
+    refundInfos.value = refundRes.data || []
   } finally {
     loading.value = false
   }
@@ -162,16 +180,33 @@ const handleCancel = () => {
   })
 }
 
-const openRefundDialog = () => { refundDialog.value = { visible: true, submitting: false, form: { reason: '' } } }
+const openRefundDialog = () => {
+  refundDialog.value = {
+    visible: true,
+    submitting: false,
+    form: {
+      reason: '',
+      items: (order.value?.items || []).map(item => {
+        const available = Number(item.availableRefundQuantity ?? (item.quantity - (item.shippedQuantity || 0) - (item.refundedQuantity || 0)))
+        return { ...item, selected: available > 0, availableRefundQuantity: available, quantity: Math.max(1, available) }
+      })
+    }
+  }
+}
 const submitRefund = async () => {
   const valid = await refundFormRef.value.validate().catch(() => false)
   if (!valid) return
   refundDialog.value.submitting = true
   try {
-    const res = await applyRefund({ orderNo: order.value.orderNo, refundAmount: Number(order.value.totalAmount), reason: refundDialog.value.form.reason.trim() })
-    refundInfo.value = res.data
+    const items = refundDialog.value.form.items.filter(item => item.selected && item.quantity > 0).map(item => ({ orderItemId: item.id, quantity: item.quantity }))
+    if (!items.length) {
+      ElMessage.warning('请至少选择一个可退款商品')
+      return
+    }
+    await applyRefund({ orderNo: order.value.orderNo, items, reason: refundDialog.value.form.reason.trim() })
     ElMessage.success('退款申请已提交，请等待管理员审核')
     refundDialog.value.visible = false
+    await fetchDetail()
   } finally {
     refundDialog.value.submitting = false
   }
@@ -337,7 +372,7 @@ onMounted(fetchDetail)
 }
 
 .col-price { color: #777; }
-.col-qty { color: #aaa; text-align: center; }
+.col-qty { color: #aaa; text-align: center; }.col-qty small { display: block; color: #a7adb7; font-size: 11px; }
 .col-sub { font-weight: 600; color: #333; text-align: right; }
 .shipment-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; }.shipment-row + .shipment-row { border-top: 1px dashed #f0efed; }.shipment-row strong, .shipment-row span, .shipment-detail small { display: block; }.shipment-row strong { color: #444; font-size: 13px; }.shipment-row > div > span { margin-top: 4px; color: #888; font-size: 12px; }.shipment-detail { text-align: right; color: #555; font-size: 13px; }.shipment-detail small { margin-top: 4px; color: #aaa; font-size: 12px; }
 
@@ -382,7 +417,7 @@ onMounted(fetchDetail)
 .action-btn.refund { background: rgba(229,90,43,.08); color: #e55a2b; }
 .action-btn.refund:hover { background: rgba(229,90,43,.15); }
 .action-btn.pending { background: #f2f4f7; color: #98a2b3; cursor: not-allowed; }
-.refund-hint { margin: 0 0 20px; color: #8a6417; font-size: 13px; line-height: 1.7; }.refund-amount { color: #e55a2b; font-weight: 700; font-size: 16px; }
+.refund-hint { margin: 0 0 20px; color: #8a6417; font-size: 13px; line-height: 1.7; }.refund-amount { color: #e55a2b; font-weight: 700; font-size: 16px; }.refund-items { width: 100%; }.refund-item-row { display: grid; grid-template-columns: minmax(180px, 1fr) 65px 110px 75px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px dashed #eee; }.refund-item-row > span { color: #98a2b3; font-size: 12px; }.refund-item-row strong { color: #e55a2b; text-align: right; }
 .refund-status { margin-top: 14px; padding: 12px 16px; border-radius: 10px; font-size: 13px; line-height: 1.65; }.refund-status strong { margin-right: 8px; }.refund-status-0 { color: #8a6417; background: #fff8e9; border: 1px solid #f6e2aa; }.refund-status-1 { color: #267a53; background: #edf9f2; border: 1px solid #ccebd9; }.refund-status-2 { color: #b54708; background: #fff4ed; border: 1px solid #f9d6c1; }
 
 @media (max-width: 768px) {

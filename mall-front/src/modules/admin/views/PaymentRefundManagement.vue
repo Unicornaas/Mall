@@ -25,7 +25,7 @@
       </el-tab-pane>
 
       <el-tab-pane label="退款审批" name="refunds">
-        <div class="rule-tip"><el-icon><InfoFilled /></el-icon><span>当前仅支持已支付、未发货订单的整单退款。审核通过后会取消订单并回补对应库存。</span></div>
+        <div class="rule-tip"><el-icon><InfoFilled /></el-icon><span>退款按商品明细和数量审核。审核通过后只回补所选商品库存；全部商品退款时才会取消整笔订单。</span></div>
         <div class="filter-card">
           <el-form :inline="true" :model="refundQuery" @submit.prevent="searchRefunds">
             <el-form-item label="订单号"><el-input v-model="refundQuery.orderNo" clearable placeholder="输入订单号" @keyup.enter="searchRefunds" /></el-form-item>
@@ -38,6 +38,7 @@
           <el-table v-loading="refundLoading" :data="refundRecords" stripe>
             <el-table-column prop="orderNo" label="订单号" min-width="190" /><el-table-column prop="userId" label="用户 ID" width="155" />
             <el-table-column label="退款金额" width="115"><template #default="{ row }">¥{{ amount(row.refundAmount) }}</template></el-table-column>
+            <el-table-column label="退款商品" min-width="220"><template #default="{ row }">{{ refundItemText(row.items) }}</template></el-table-column>
             <el-table-column prop="reason" label="申请原因" min-width="190"><template #default="{ row }">{{ row.reason || '-' }}</template></el-table-column>
             <el-table-column label="状态" width="112"><template #default="{ row }"><el-tag :type="refundStatus(row.refundStatus).type" effect="light">{{ refundStatus(row.refundStatus).label }}</el-tag></template></el-table-column>
             <el-table-column prop="processorId" label="处理人 ID" width="155"><template #default="{ row }">{{ row.processorId || '-' }}</template></el-table-column>
@@ -51,7 +52,7 @@
     </el-tabs>
 
     <el-dialog v-model="processDialog.visible" :title="processDialog.status === 1 ? '同意退款' : '拒绝退款'" width="480px" destroy-on-close>
-      <p class="dialog-hint">订单 {{ processDialog.row?.orderNo }}，退款金额 ¥{{ amount(processDialog.row?.refundAmount) }}。{{ processDialog.status === 1 ? '确认后将取消订单并回补库存。' : '请说明拒绝原因。' }}</p>
+      <p class="dialog-hint">订单 {{ processDialog.row?.orderNo }}，退款商品：{{ refundItemText(processDialog.row?.items) }}，金额 ¥{{ amount(processDialog.row?.refundAmount) }}。{{ processDialog.status === 1 ? '确认后只处理所选商品明细。' : '请说明拒绝原因。' }}</p>
       <el-form ref="processFormRef" :model="processDialog.form" :rules="processRules" label-width="80px"><el-form-item label="处理备注" prop="processRemark"><el-input v-model="processDialog.form.processRemark" type="textarea" :rows="4" :placeholder="processDialog.status === 1 ? '可选：填写审核说明' : '必填：填写拒绝原因'" maxlength="500" show-word-limit /></el-form-item></el-form>
       <template #footer><el-button @click="processDialog.visible = false">取消</el-button><el-button :type="processDialog.status === 1 ? 'success' : 'danger'" :loading="processDialog.submitting" @click="submitProcess">确认{{ processDialog.status === 1 ? '退款' : '拒绝' }}</el-button></template>
     </el-dialog>
@@ -77,6 +78,7 @@ const refundStatusOptions = [{ value: 0, label: '待处理' }, { value: 1, label
 const processRules = { processRemark: [{ validator: (_, value, callback) => processDialog.status === 2 && !value?.trim() ? callback(new Error('请填写拒绝原因')) : callback(), trigger: 'blur' }] }
 const pendingRefundCount = computed(() => refundRecords.value.filter(item => item.refundStatus === 0).length)
 const amount = (value) => Number(value || 0).toFixed(2)
+const refundItemText = (items) => (items || []).map(item => `${item.productName} x${item.quantity}`).join('、') || '历史整单退款明细'
 const payStatus = (status) => ({ 0: { label: '待支付', type: 'warning' }, 1: { label: '已支付', type: 'success' }, 2: { label: '已退款', type: 'info' }, 3: { label: '已关闭', type: 'info' } }[Number(status)] || { label: '未知', type: 'info' })
 const refundStatus = (status) => ({ 0: { label: '待处理', type: 'warning' }, 1: { label: '已退款', type: 'success' }, 2: { label: '已拒绝', type: 'danger' } }[Number(status)] || { label: '未知', type: 'info' })
 const fetchPayments = async () => { paymentLoading.value = true; try { const res = await getAdminPaymentPage(paymentQuery); paymentRecords.value = res.data?.records || []; paymentTotal.value = res.data?.total || 0 } finally { paymentLoading.value = false } }
@@ -86,7 +88,7 @@ const searchRefunds = () => { refundQuery.pageNum = 1; fetchRefunds() }
 const resetPayments = () => { Object.assign(paymentQuery, { pageNum: 1, pageSize: 20, orderNo: '', payStatus: undefined }); fetchPayments() }
 const resetRefunds = () => { Object.assign(refundQuery, { pageNum: 1, pageSize: 20, orderNo: '', refundStatus: undefined }); fetchRefunds() }
 const openProcess = (row, status) => { processDialog.row = row; processDialog.status = status; processDialog.form = { processRemark: '' }; processDialog.visible = true }
-const submitProcess = async () => { const valid = await processFormRef.value.validate().catch(() => false); if (!valid) return; processDialog.submitting = true; try { await processAdminRefund(processDialog.row.id, { refundStatus: processDialog.status, processRemark: processDialog.form.processRemark.trim() || null }); ElMessage.success(processDialog.status === 1 ? '退款已处理，订单和库存已同步更新' : '退款申请已拒绝'); processDialog.visible = false; await fetchRefunds(); await fetchPayments() } finally { processDialog.submitting = false } }
+const submitProcess = async () => { const valid = await processFormRef.value.validate().catch(() => false); if (!valid) return; processDialog.submitting = true; try { await processAdminRefund(processDialog.row.id, { refundStatus: processDialog.status, processRemark: processDialog.form.processRemark.trim() || null }); ElMessage.success(processDialog.status === 1 ? '退款明细已处理，库存和订单状态已同步' : '退款申请已拒绝'); processDialog.visible = false; await fetchRefunds(); await fetchPayments() } finally { processDialog.submitting = false } }
 
 onMounted(async () => { await fetchPayments(); await fetchRefunds() })
 </script>

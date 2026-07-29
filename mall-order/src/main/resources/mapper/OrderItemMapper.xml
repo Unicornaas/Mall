@@ -12,6 +12,11 @@
         <result column="product_image" property="productImage"/>
         <result column="price" property="price"/>
         <result column="quantity" property="quantity"/>
+        <result column="shipped_quantity" property="shippedQuantity"/>
+        <result column="refunded_quantity" property="refundedQuantity"/>
+        <result column="shipping_company" property="shippingCompany"/>
+        <result column="tracking_no" property="trackingNo"/>
+        <result column="ship_time" property="shipTime"/>
         <result column="total_price" property="totalPrice"/>
     </resultMap>
     <insert id="insertBatch">
@@ -23,5 +28,10 @@
     <select id="selectByOrderId" resultMap="BaseResultMap">SELECT * FROM order_item WHERE order_id = #{orderId}</select>
     <select id="selectByOrderIdAndSellerId" resultMap="BaseResultMap">
         SELECT * FROM order_item WHERE order_id = #{orderId} AND seller_id = #{sellerId}
+    </select>
+    <select id="selectBySellerOrderIdAndSellerId" resultMap="BaseResultMap">
+        SELECT * FROM order_item
+        WHERE seller_order_id = #{sellerOrderId} AND seller_id = #{sellerId}
+        ORDER BY id
     </select>
 </mapper>

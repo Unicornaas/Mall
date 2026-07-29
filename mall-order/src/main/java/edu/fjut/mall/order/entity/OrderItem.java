@@ -17,5 +17,10 @@ public class OrderItem {
     private String productImage;
     private BigDecimal price;
     private Integer quantity;
+    private Integer shippedQuantity;
+    private Integer refundedQuantity;
+    private String shippingCompany;
+    private String trackingNo;
+    private java.time.LocalDateTime shipTime;
     private BigDecimal totalPrice;
 }

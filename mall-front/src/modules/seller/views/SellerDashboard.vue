@@ -66,7 +66,7 @@ const stockAlerts = ref([])
 
 const formatAmount = (value) => Number(value || 0).toFixed(2)
 const formatTime = (value) => value ? String(value).replace('T', ' ').slice(0, 19) : '-'
-const statusText = (status) => ({ 0: '待支付', 1: '待发货', 2: '已发货', 3: '已完成', 4: '已取消' }[Number(status)] || '未知')
+const statusText = (status) => ({ 0: '待支付', 1: '待发货', 2: '已发货', 3: '已完成', 4: '已取消', 5: '部分发货' }[Number(status)] || '未知')
 const statusType = (status) => ({ 0: 'warning', 1: 'primary', 2: 'success', 3: 'success', 4: 'info' }[Number(status)] || 'info')
 
 const metrics = computed(() => [

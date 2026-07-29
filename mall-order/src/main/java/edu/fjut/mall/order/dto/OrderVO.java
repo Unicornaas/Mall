@@ -37,6 +37,13 @@ public class OrderVO {
         private String productImage;
         private BigDecimal price;
         private Integer quantity;
+        private Integer shippedQuantity;
+        private Integer refundedQuantity;
+        private Integer availableShipQuantity;
+        private Integer availableRefundQuantity;
+        private String shippingCompany;
+        private String trackingNo;
+        private LocalDateTime shipTime;
         private BigDecimal totalPrice;
     }
 }

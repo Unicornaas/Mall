@@ -77,7 +77,7 @@ const store = useUserStore()
 const loading = ref(false)
 const orders = ref([])
 
-const statusMap = { 0: '待付款', 1: '已付款', 2: '已发货', 3: '已收货', 4: '已取消', 5: '已关闭' }
+const statusMap = { 0: '待付款', 1: '已付款', 2: '已发货', 3: '已收货', 4: '已取消', 5: '部分发货' }
 
 const statusText = (s) => statusMap[s] || '未知'
 

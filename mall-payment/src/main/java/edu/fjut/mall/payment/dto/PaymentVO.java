@@ -13,6 +13,7 @@ public class PaymentVO {
     private String orderNo;
     private Long userId;
     private BigDecimal amount;
+    private BigDecimal refundAmount;
     private Integer payType;
     private Integer payStatus;
     private String tradeNo;

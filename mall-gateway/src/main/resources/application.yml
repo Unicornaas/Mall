@@ -44,6 +44,10 @@ spring:
           uri: lb://mall-order
           predicates:
             - Path=/api/seller/dashboard/**
+        - id: mall-admin-dashboard
+          uri: lb://mall-order
+          predicates:
+            - Path=/api/admin/dashboard/**
         # ========== 购物车服务 ==========
         - id: mall-cart
           uri: lb://mall-cart

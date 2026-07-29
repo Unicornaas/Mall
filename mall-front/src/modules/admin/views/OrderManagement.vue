@@ -52,10 +52,10 @@ const shipFormRef = ref()
 const query = reactive({ pageNum: 1, pageSize: 20, orderNo: '', userId: '', status: undefined })
 const detailDrawer = reactive({ visible: false, order: null })
 const shipDialog = reactive({ visible: false, submitting: false, orderId: null, form: { shippingCompany: '', trackingNo: '' } })
-const statusOptions = [{ value: 0, label: '待支付' }, { value: 1, label: '已支付' }, { value: 2, label: '已发货' }, { value: 3, label: '已完成' }, { value: 4, label: '已取消' }]
+const statusOptions = [{ value: 0, label: '待支付' }, { value: 1, label: '已支付' }, { value: 2, label: '已发货' }, { value: 5, label: '部分发货' }, { value: 3, label: '已完成' }, { value: 4, label: '已取消' }]
 const shipRules = { shippingCompany: [{ required: true, message: '请输入物流公司', trigger: 'blur' }], trackingNo: [{ required: true, message: '请输入运单号', trigger: 'blur' }] }
-const statusText = (status) => ({ 0: '待支付', 1: '已支付', 2: '已发货', 3: '已完成', 4: '已取消' }[Number(status)] || '未知')
-const statusType = (status) => ({ 0: 'warning', 1: 'primary', 2: 'success', 3: 'success', 4: 'info' }[Number(status)] || 'info')
+const statusText = (status) => ({ 0: '待支付', 1: '已支付', 2: '已发货', 3: '已完成', 4: '已取消', 5: '部分发货' }[Number(status)] || '未知')
+const statusType = (status) => ({ 0: 'warning', 1: 'primary', 2: 'success', 3: 'success', 4: 'info', 5: 'warning' }[Number(status)] || 'info')
 
 const fetchOrders = async () => { loading.value = true; try { const params = { ...query, userId: query.userId || undefined }; const res = await getAdminOrderPage(params); records.value = res.data?.records || []; total.value = res.data?.total || 0 } finally { loading.value = false } }
 const search = () => { query.pageNum = 1; fetchOrders() }

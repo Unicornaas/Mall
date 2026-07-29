@@ -9,6 +9,10 @@ import edu.fjut.mall.order.dto.SellerOrderVO;
 import edu.fjut.mall.order.dto.SellerDashboardOrderVO;
 import edu.fjut.mall.order.dto.SellerDashboardOverviewVO;
 import edu.fjut.mall.order.dto.SellerDashboardStockAlertVO;
+import edu.fjut.mall.order.dto.AdminDashboardOrderVO;
+import edu.fjut.mall.order.dto.AdminDashboardOverviewVO;
+import edu.fjut.mall.order.dto.AdminDashboardStockAlertVO;
+import edu.fjut.mall.order.dto.AdminDashboardTrendVO;
 import edu.fjut.mall.common.page.PageResult;
 
 import java.util.List;
@@ -29,4 +33,8 @@ public interface OrderService {
     SellerDashboardOverviewVO getDashboardOverview(Long sellerId);
     List<SellerDashboardOrderVO> getDashboardRecentOrders(Long sellerId, Integer limit);
     List<SellerDashboardStockAlertVO> getDashboardStockAlerts(Long sellerId, Integer limit);
+    AdminDashboardOverviewVO getAdminDashboardOverview();
+    List<AdminDashboardTrendVO> getAdminDashboardOrderTrend(Integer days);
+    List<AdminDashboardOrderVO> getAdminDashboardLatestOrders(Integer limit);
+    List<AdminDashboardStockAlertVO> getAdminDashboardStockAlerts(Integer limit);
 }

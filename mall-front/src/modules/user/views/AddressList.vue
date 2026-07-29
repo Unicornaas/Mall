@@ -58,17 +58,23 @@
         <el-row :gutter="12">
           <el-col :span="8">
             <el-form-item label="省份" prop="province">
-              <el-input v-model="addrForm.province" placeholder="省份" />
+              <el-select v-model="addrForm.province" filterable clearable placeholder="请选择省份" @change="handleProvinceChange">
+                <el-option v-for="option in provinceOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="城市" prop="city">
-              <el-input v-model="addrForm.city" placeholder="城市" />
+              <el-select v-model="addrForm.city" filterable clearable :disabled="!addrForm.province" placeholder="请选择城市" @change="handleCityChange">
+                <el-option v-for="option in cityOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="区/县" prop="district">
-              <el-input v-model="addrForm.district" placeholder="区/县" />
+              <el-select v-model="addrForm.district" filterable clearable :disabled="!addrForm.city" placeholder="请选择区/县">
+                <el-option v-for="option in districtOptions" :key="option.value" :label="option.label" :value="option.value" />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
@@ -78,7 +84,7 @@
         <el-form-item>
           <label class="switch-label">
             <span>设为默认地址</span>
-            <el-switch v-model="isDefault" :active-value="1" :inactive-value="0" />
+            <el-switch v-model="addrForm.isDefault" :active-value="1" :inactive-value="0" />
           </label>
         </el-form-item>
       </el-form>
@@ -97,6 +103,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete, MapLocation } from '@element-plus/icons-vue'
+import { pcaTextArr } from 'element-china-area-data'
 import { getAddresses, addAddress, updateAddress, deleteAddress } from '../api/address'
 
 const loading = ref(false)
@@ -116,10 +123,18 @@ const addrForm = reactive({
   isDefault: 0,
 })
 
-const isDefault = computed({
-  get: () => addrForm.isDefault === 1,
-  set: (v) => { addrForm.isDefault = v ? 1 : 0 },
-})
+const provinceOptions = pcaTextArr
+const cityOptions = computed(() => provinceOptions.find(option => option.value === addrForm.province)?.children || [])
+const districtOptions = computed(() => cityOptions.value.find(option => option.value === addrForm.city)?.children || [])
+
+const handleProvinceChange = () => {
+  addrForm.city = ''
+  addrForm.district = ''
+}
+
+const handleCityChange = () => {
+  addrForm.district = ''
+}
 
 const addrRules = {
   receiverName: [{ required: true, message: '请输入收货人', trigger: 'blur' }],
@@ -346,6 +361,10 @@ onMounted(fetchList)
   width: 100%;
   font-size: 14px;
   color: #333;
+}
+
+.address-page :deep(.el-select) {
+  width: 100%;
 }
 
 .dialog-cancel,

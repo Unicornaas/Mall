@@ -20,6 +20,10 @@ export function getRefundStatus(orderNo) {
   return request.get(`/payment/refund/status/${orderNo}`)
 }
 
+export function getRefundList(orderNo) {
+  return request.get(`/payment/refund/list/${orderNo}`)
+}
+
 export function getPaymentPage(pageNum = 1, pageSize = 20) {
   return request.get('/payment/page', { params: { pageNum, pageSize } })
 }

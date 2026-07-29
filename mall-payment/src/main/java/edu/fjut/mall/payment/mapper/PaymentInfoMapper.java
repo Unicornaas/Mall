@@ -5,6 +5,7 @@ import edu.fjut.mall.payment.dto.AdminPaymentPageQuery;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Mapper
@@ -14,6 +15,8 @@ public interface PaymentInfoMapper {
     PaymentInfo selectByOrderNo(@Param("orderNo") String orderNo);
     List<PaymentInfo> selectAll(@Param("pageNum") Integer pageNum, @Param("pageSize") Integer pageSize);
     int updateStatus(@Param("id") Long id, @Param("payStatus") Integer payStatus);
+    int updateRefundAmount(@Param("id") Long id, @Param("refundAmount") BigDecimal refundAmount,
+                           @Param("payStatus") Integer payStatus);
     int updateTradeNo(@Param("id") Long id, @Param("tradeNo") String tradeNo);
     int countAll();
     List<PaymentInfo> selectPageForAdmin(@Param("query") AdminPaymentPageQuery query);

@@ -14,7 +14,7 @@ public class SellerOrder extends edu.fjut.mall.common.entity.BaseEntity {
     private Long orderId;
     private Long sellerId;
     private BigDecimal sellerAmount;
-    private Integer status;
+    private Integer status; // 0-待支付 1-待发货 2-已发货 3-已完成 4-已取消 5-部分发货
     private String shippingCompany;
     private String trackingNo;
     private LocalDateTime shipTime;

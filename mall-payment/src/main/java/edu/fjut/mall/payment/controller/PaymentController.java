@@ -61,6 +61,13 @@ public class PaymentController {
         return Result.success(paymentService.queryRefundStatus(orderNo, userId));
     }
 
+    /** Lists all item-level refund requests for the buyer's order. */
+    @GetMapping("/refund/list/{orderNo}")
+    public Result<List<RefundVO>> refundList(@PathVariable String orderNo,
+                                              @RequestHeader("X-User-Id") Long userId) {
+        return Result.success(paymentService.listRefunds(orderNo, userId));
+    }
+
     /**
      * PAY-05: 退款处理
      */

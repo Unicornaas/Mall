@@ -6,6 +6,7 @@
         <result column="order_no" property="orderNo"/>
         <result column="user_id" property="userId"/>
         <result column="amount" property="amount"/>
+        <result column="refund_amount" property="refundAmount"/>
         <result column="pay_type" property="payType"/>
         <result column="pay_status" property="payStatus"/>
         <result column="trade_no" property="tradeNo"/>
@@ -33,6 +34,11 @@
 
     <update id="updateStatus">
         UPDATE payment_info SET pay_status = #{payStatus} WHERE id = #{id}
+    </update>
+
+    <update id="updateRefundAmount">
+        UPDATE payment_info SET refund_amount = #{refundAmount}, pay_status = #{payStatus}
+        WHERE id = #{id}
     </update>
 
     <update id="updateTradeNo">

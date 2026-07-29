@@ -8,6 +8,7 @@ import edu.fjut.mall.common.util.SnowflakeIdGenerator;
 import edu.fjut.mall.payment.dto.*;
 import edu.fjut.mall.payment.entity.PaymentInfo;
 import edu.fjut.mall.payment.entity.PaymentRefund;
+import edu.fjut.mall.payment.entity.PaymentRefundItem;
 import edu.fjut.mall.payment.mapper.PaymentInfoMapper;
 import edu.fjut.mall.payment.mapper.PaymentRefundMapper;
 import edu.fjut.mall.payment.service.PaymentService;
@@ -22,6 +23,8 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.HashMap;
 
 @Slf4j
 @Service
@@ -124,37 +127,101 @@ public class PaymentServiceImpl implements PaymentService {
     @Override
     @Transactional
     public RefundVO refund(RefundRequest request) {
-        getOrder(request.getOrderNo(), request.getUserId());
-        if (request.getRefundAmount() == null
-                || request.getRefundAmount().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款金额必须大于 0");
-        }
+        Map<String, Object> order = getOrder(request.getOrderNo(), request.getUserId());
         PaymentInfo info = paymentInfoMapper.selectByOrderNo(request.getOrderNo());
         if (info == null) throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "支付单不存在");
         if (info.getPayStatus() != 1)
             throw new BusinessException(ResultCode.PAYMENT_FAILED.getCode(), "仅已支付的订单可申请退款");
-        if (hasShippedSellerOrder(request.getOrderNo())) {
-            throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "订单已有店铺发货，不能申请整单退款");
+
+        List<Map<String, Object>> orderItems = jdbcTemplate.queryForList(
+            "SELECT id, seller_order_id, sku_id, product_name, price, quantity, "
+                + "COALESCE(shipped_quantity, 0) shipped_quantity, COALESCE(refunded_quantity, 0) refunded_quantity "
+                + "FROM order_item WHERE order_id = ? ORDER BY id", order.get("id"));
+        List<RefundItemRequest> requestedItems = request.getItems();
+        if (requestedItems == null || requestedItems.isEmpty()) {
+            requestedItems = new ArrayList<>();
+            for (Map<String, Object> item : orderItems) {
+                int refundable = ((Number) item.get("quantity")).intValue()
+                    - ((Number) item.get("shipped_quantity")).intValue()
+                    - ((Number) item.get("refunded_quantity")).intValue();
+                if (refundable > 0) {
+                    RefundItemRequest fullItem = new RefundItemRequest();
+                    fullItem.setOrderItemId(((Number) item.get("id")).longValue());
+                    fullItem.setQuantity(refundable);
+                    requestedItems.add(fullItem);
+                }
+            }
         }
-        if (request.getRefundAmount().compareTo(info.getAmount()) > 0)
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款金额不能超过支付金额");
-        if (request.getRefundAmount().compareTo(info.getAmount()) != 0)
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "当前仅支持整单退款");
-        if (paymentRefundMapper.countActiveByOrderNo(request.getOrderNo()) > 0)
-            throw new BusinessException(ResultCode.CONFLICT.getCode(), "该订单已有待处理或已完成的退款申请");
+        Map<Long, Integer> requested = new HashMap<>();
+        for (RefundItemRequest item : requestedItems) {
+            if (item.getOrderItemId() == null || item.getQuantity() == null || item.getQuantity() < 1
+                    || requested.put(item.getOrderItemId(), item.getQuantity()) != null) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款商品或数量不合法");
+            }
+        }
+        BigDecimal calculatedAmount = BigDecimal.ZERO;
+        List<PaymentRefundItem> refundItems = new ArrayList<>();
+        for (Map<String, Object> item : orderItems) {
+            Long itemId = ((Number) item.get("id")).longValue();
+            Integer quantity = requested.get(itemId);
+            if (quantity == null) continue;
+            int refundable = ((Number) item.get("quantity")).intValue()
+                - ((Number) item.get("shipped_quantity")).intValue()
+                - ((Number) item.get("refunded_quantity")).intValue();
+            if (quantity > refundable) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款数量超过商品可退数量");
+            }
+            BigDecimal price = (BigDecimal) item.get("price");
+            BigDecimal itemAmount = price.multiply(BigDecimal.valueOf(quantity));
+            PaymentRefundItem refundItem = new PaymentRefundItem();
+            refundItem.setId(idGen.nextId());
+            refundItem.setOrderItemId(itemId);
+            refundItem.setSellerOrderId(item.get("seller_order_id") == null ? null : ((Number) item.get("seller_order_id")).longValue());
+            refundItem.setSkuId(((Number) item.get("sku_id")).longValue());
+            refundItem.setProductName((String) item.get("product_name"));
+            refundItem.setPrice(price);
+            refundItem.setQuantity(quantity);
+            refundItem.setRefundAmount(itemAmount);
+            refundItem.setItemStatus(0);
+            calculatedAmount = calculatedAmount.add(itemAmount);
+            refundItems.add(refundItem);
+        }
+        if (requested.size() != refundItems.size()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款商品不属于当前订单");
+        }
+        if (refundItems.isEmpty() || calculatedAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "没有可退款的商品");
+        }
+        BigDecimal alreadyRefunded = info.getRefundAmount() == null ? BigDecimal.ZERO : info.getRefundAmount();
+        if (alreadyRefunded.add(calculatedAmount).compareTo(info.getAmount()) > 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "累计退款金额不能超过支付金额");
+        }
+        for (Long itemId : requested.keySet()) {
+            Integer active = jdbcTemplate.queryForObject(
+                "SELECT COALESCE(SUM(quantity), 0) FROM payment_refund_item pri "
+                    + "INNER JOIN payment_refund pr ON pr.id = pri.refund_id "
+                    + "WHERE pri.order_item_id = ? AND pr.refund_status = 0", Integer.class, itemId);
+            if (active != null && active > 0) {
+                throw new BusinessException(ResultCode.CONFLICT.getCode(), "所选商品已有退款申请正在审核");
+            }
+        }
 
         PaymentRefund refund = new PaymentRefund();
         refund.setId(idGen.nextId());
         refund.setOrderNo(request.getOrderNo());
         refund.setUserId(request.getUserId());
-        refund.setRefundAmount(request.getRefundAmount());
+        refund.setRefundAmount(calculatedAmount);
         refund.setRefundStatus(0);  // 待处理
         refund.setReason(request.getReason());
         refund.setCreateTime(LocalDateTime.now());
         refund.setUpdateTime(LocalDateTime.now());
         paymentRefundMapper.insert(refund);
+        for (PaymentRefundItem item : refundItems) {
+            item.setRefundId(refund.getId());
+            paymentRefundMapper.insertItem(item);
+        }
 
-        log.info("退款申请创建: orderNo={}, amount={}, reason={}", request.getOrderNo(), request.getRefundAmount(), request.getReason());
+        log.info("退款申请创建: orderNo={}, amount={}, reason={}", request.getOrderNo(), calculatedAmount, request.getReason());
         return toRefundVO(refund);
     }
 
@@ -162,7 +229,16 @@ public class PaymentServiceImpl implements PaymentService {
     public RefundVO queryRefundStatus(String orderNo, Long userId) {
         getOrder(orderNo, userId);
         PaymentRefund refund = paymentRefundMapper.selectLatestByOrderNo(orderNo);
-        return refund == null ? null : toRefundVO(refund);
+        if (refund == null) return null;
+        refund.setItems(paymentRefundMapper.selectItemsByRefundId(refund.getId()));
+        return toRefundVO(refund);
+    }
+
+    @Override
+    public List<RefundVO> listRefunds(String orderNo, Long userId) {
+        getOrder(orderNo, userId);
+        return paymentRefundMapper.selectByOrderNo(orderNo).stream().peek(refund ->
+            refund.setItems(paymentRefundMapper.selectItemsByRefundId(refund.getId()))).map(this::toRefundVO).toList();
     }
 
     @Override
@@ -190,23 +266,30 @@ public class PaymentServiceImpl implements PaymentService {
             if (info == null || info.getPayStatus() != 1) {
                 throw new BusinessException(ResultCode.PAYMENT_FAILED.getCode(), "支付单当前不可退款");
             }
-            if (hasShippedSellerOrder(refund.getOrderNo())) {
-                throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "订单已有店铺发货，不能执行整单退款");
+            List<PaymentRefundItem> refundItems = paymentRefundMapper.selectItemsByRefundId(refund.getId());
+            if (refundItems.isEmpty()) {
+                refundItems = buildLegacyRefundItems(refund);
             }
-            int orderRows = jdbcTemplate.update(
-                "UPDATE order_t SET status = 4 WHERE order_no = ? AND status = 1", refund.getOrderNo());
-            if (orderRows == 0) {
-                throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "订单已发货或状态已变化，不能执行退款");
+            BigDecimal refundTotal = BigDecimal.ZERO;
+            for (PaymentRefundItem item : refundItems) {
+                int rows = jdbcTemplate.update(
+                    "UPDATE order_item SET refunded_quantity = COALESCE(refunded_quantity, 0) + ? "
+                        + "WHERE id = ? AND quantity - COALESCE(shipped_quantity, 0) - COALESCE(refunded_quantity, 0) >= ?",
+                    item.getQuantity(), item.getOrderItemId(), item.getQuantity());
+                if (rows == 0) throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "商品可退款数量已发生变化");
+                restoreInventory(item.getSkuId(), item.getQuantity(), refund.getOrderNo());
+                refundTotal = refundTotal.add(item.getRefundAmount());
             }
-            jdbcTemplate.update(
-                "UPDATE seller_order_t SET status = 4, update_time = NOW() "
-                    + "WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?) AND status = 1", refund.getOrderNo());
-            restoreInventory(refund.getOrderNo());
-            paymentInfoMapper.updateStatus(info.getId(), 2);
+            BigDecimal cumulative = (info.getRefundAmount() == null ? BigDecimal.ZERO : info.getRefundAmount()).add(refundTotal);
+            int payStatus = cumulative.compareTo(info.getAmount()) >= 0 ? 2 : 1;
+            paymentInfoMapper.updateRefundAmount(info.getId(), cumulative, payStatus);
+            refreshOrderStatuses(refund.getOrderNo());
+            paymentRefundMapper.updateItemStatus(refund.getId(), 1);
             log.info("退款成功: refundId={}, orderNo={}, amount={}", refundId, refund.getOrderNo(), refund.getRefundAmount());
         } else {
             log.info("退款拒绝: refundId={}, orderNo={}", refundId, refund.getOrderNo());
         }
+        paymentRefundMapper.updateItemStatus(refundId, refundStatus);
         int rows = paymentRefundMapper.updateProcess(refundId, refundStatus, processorId, processRemark);
         if (rows == 0) {
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "退款记录已处理");
@@ -215,6 +298,7 @@ public class PaymentServiceImpl implements PaymentService {
         refund.setProcessorId(processorId);
         refund.setProcessRemark(processRemark);
         refund.setProcessTime(LocalDateTime.now());
+        refund.setItems(paymentRefundMapper.selectItemsByRefundId(refund.getId()));
         return toRefundVO(refund);
     }
 
@@ -243,16 +327,12 @@ public class PaymentServiceImpl implements PaymentService {
         if (total == 0) {
             return PageResult.empty(query);
         }
-        List<RefundVO> records = paymentRefundMapper.selectPageForAdmin(query).stream().map(this::toRefundVO).toList();
+        List<RefundVO> records = paymentRefundMapper.selectPageForAdmin(query).stream().peek(refund ->
+            refund.setItems(paymentRefundMapper.selectItemsByRefundId(refund.getId()))).map(this::toRefundVO).toList();
         return new PageResult<>(records, total, query.getPageNum(), query.getPageSize());
     }
 
-    private void restoreInventory(String orderNo) {
-        List<Map<String, Object>> items = jdbcTemplate.queryForList(
-            "SELECT sku_id, quantity FROM order_item WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?)", orderNo);
-        for (Map<String, Object> item : items) {
-            Long skuId = ((Number) item.get("sku_id")).longValue();
-            int quantity = ((Number) item.get("quantity")).intValue();
+    private void restoreInventory(Long skuId, int quantity, String orderNo) {
             int rows = jdbcTemplate.update(
                 "UPDATE inventory SET total_stock = total_stock + ?, available_stock = available_stock + ?, update_time = NOW() WHERE sku_id = ?",
                 quantity, quantity, skuId);
@@ -264,15 +344,51 @@ public class PaymentServiceImpl implements PaymentService {
                 "INSERT INTO inventory_log (id, sku_id, order_no, change_type, change_count, before_stock, after_stock) "
                     + "SELECT ?, sku_id, ?, 'REFUND', ?, available_stock - ?, available_stock FROM inventory WHERE sku_id = ?",
                 idGen.nextId(), orderNo, quantity, quantity, skuId);
-        }
     }
 
-    private boolean hasShippedSellerOrder(String orderNo) {
-        Integer count = jdbcTemplate.queryForObject(
-            "SELECT COUNT(1) FROM seller_order_t WHERE order_id = "
-                + "(SELECT id FROM order_t WHERE order_no = ?) AND status IN (2, 3)",
-            Integer.class, orderNo);
-        return count != null && count > 0;
+    private List<PaymentRefundItem> buildLegacyRefundItems(PaymentRefund refund) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+            "SELECT id, seller_order_id, sku_id, product_name, price, quantity "
+                + "FROM order_item WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?)"
+                + " AND COALESCE(shipped_quantity, 0) = 0 AND COALESCE(refunded_quantity, 0) = 0",
+            refund.getOrderNo());
+        List<PaymentRefundItem> items = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            PaymentRefundItem item = new PaymentRefundItem();
+            item.setOrderItemId(((Number) row.get("id")).longValue());
+            item.setSellerOrderId(row.get("seller_order_id") == null ? null : ((Number) row.get("seller_order_id")).longValue());
+            item.setSkuId(((Number) row.get("sku_id")).longValue());
+            item.setProductName((String) row.get("product_name"));
+            item.setPrice((BigDecimal) row.get("price"));
+            item.setQuantity(((Number) row.get("quantity")).intValue());
+            item.setRefundAmount(item.getPrice().multiply(BigDecimal.valueOf(item.getQuantity())));
+            items.add(item);
+        }
+        return items;
+    }
+
+    private void refreshOrderStatuses(String orderNo) {
+        Integer remaining = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM order_item WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?) "
+                + "AND quantity > COALESCE(refunded_quantity, 0)", Integer.class, orderNo);
+        Integer unshipped = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM order_item WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?) "
+                + "AND quantity > COALESCE(shipped_quantity, 0) + COALESCE(refunded_quantity, 0)", Integer.class, orderNo);
+        Integer shipped = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM order_item WHERE order_id = (SELECT id FROM order_t WHERE order_no = ?) "
+                + "AND COALESCE(shipped_quantity, 0) > 0", Integer.class, orderNo);
+        if (remaining != null && remaining == 0) {
+            jdbcTemplate.update("UPDATE order_t SET status = 4 WHERE order_no = ? AND status IN (1, 2, 3)", orderNo);
+        } else if (unshipped != null && unshipped == 0) {
+            jdbcTemplate.update("UPDATE order_t SET status = 2 WHERE order_no = ? AND status IN (1, 5)", orderNo);
+        } else if (shipped != null && shipped > 0) {
+            jdbcTemplate.update("UPDATE order_t SET status = 5 WHERE order_no = ? AND status IN (1, 2)", orderNo);
+        }
+        jdbcTemplate.update(
+            "UPDATE seller_order_t so SET status = 4, update_time = NOW() "
+                + "WHERE so.order_id = (SELECT id FROM order_t WHERE order_no = ?) "
+                + "AND NOT EXISTS (SELECT 1 FROM order_item oi WHERE oi.seller_order_id = so.id "
+                + "AND oi.quantity > COALESCE(oi.refunded_quantity, 0))", orderNo);
     }
 
     private void normalizePageQuery(PageQuery query) {
@@ -331,7 +447,7 @@ public class PaymentServiceImpl implements PaymentService {
     private PaymentVO toVO(PaymentInfo info) {
         return PaymentVO.builder()
             .id(info.getId()).orderNo(info.getOrderNo()).userId(info.getUserId())
-            .amount(info.getAmount()).payType(info.getPayType())
+            .amount(info.getAmount()).refundAmount(info.getRefundAmount()).payType(info.getPayType())
             .payStatus(info.getPayStatus()).tradeNo(info.getTradeNo())
             .payTime(info.getPayTime()).createTime(info.getCreateTime())
             .build();
@@ -343,7 +459,7 @@ public class PaymentServiceImpl implements PaymentService {
             .refundAmount(refund.getRefundAmount()).refundStatus(refund.getRefundStatus())
             .reason(refund.getReason()).processorId(refund.getProcessorId())
             .processRemark(refund.getProcessRemark()).processTime(refund.getProcessTime())
-            .createTime(refund.getCreateTime()).updateTime(refund.getUpdateTime())
+            .createTime(refund.getCreateTime()).updateTime(refund.getUpdateTime()).items(refund.getItems())
             .build();
     }
 }

@@ -11,4 +11,6 @@ public interface OrderItemMapper {
     List<OrderItem> selectByOrderId(@Param("orderId") Long orderId);
     List<OrderItem> selectByOrderIdAndSellerId(@Param("orderId") Long orderId,
                                                @Param("sellerId") Long sellerId);
+    List<OrderItem> selectBySellerOrderIdAndSellerId(@Param("sellerOrderId") Long sellerOrderId,
+                                                     @Param("sellerId") Long sellerId);
 }

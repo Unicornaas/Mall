@@ -37,4 +37,5 @@ public interface SellerOrderMapper {
     int markReceivedByOrderId(@Param("orderId") Long orderId);
 
     int countByOrderIdAndStatus(@Param("orderId") Long orderId, @Param("status") Integer status);
+    int refreshStatus(@Param("sellerOrderId") Long sellerOrderId);
 }

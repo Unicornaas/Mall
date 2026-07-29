@@ -5,6 +5,8 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
+import edu.fjut.mall.payment.entity.PaymentRefundItem;
 
 @Data
 @Builder
@@ -20,4 +22,5 @@ public class RefundVO {
     private LocalDateTime processTime;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
+    private List<PaymentRefundItem> items;
 }

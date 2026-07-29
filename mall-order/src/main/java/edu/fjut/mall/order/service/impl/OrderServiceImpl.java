@@ -8,12 +8,17 @@ import edu.fjut.mall.order.dto.AdminOrderPageQuery;
 import edu.fjut.mall.order.dto.CreateOrderRequest;
 import edu.fjut.mall.order.dto.OrderVO;
 import edu.fjut.mall.order.dto.ShipOrderRequest;
+import edu.fjut.mall.order.dto.ShipItemRequest;
 import edu.fjut.mall.order.dto.SellerOrderPageQuery;
 import edu.fjut.mall.order.dto.SellerOrderVO;
 import edu.fjut.mall.order.dto.SellerShipmentVO;
 import edu.fjut.mall.order.dto.SellerDashboardOrderVO;
 import edu.fjut.mall.order.dto.SellerDashboardOverviewVO;
 import edu.fjut.mall.order.dto.SellerDashboardStockAlertVO;
+import edu.fjut.mall.order.dto.AdminDashboardOrderVO;
+import edu.fjut.mall.order.dto.AdminDashboardOverviewVO;
+import edu.fjut.mall.order.dto.AdminDashboardStockAlertVO;
+import edu.fjut.mall.order.dto.AdminDashboardTrendVO;
 import edu.fjut.mall.order.dto.OrderVO.OrderItemVO;
 import edu.fjut.mall.order.entity.Order;
 import edu.fjut.mall.order.entity.OrderItem;
@@ -22,6 +27,7 @@ import edu.fjut.mall.order.mapper.OrderItemMapper;
 import edu.fjut.mall.order.mapper.OrderMapper;
 import edu.fjut.mall.order.mapper.SellerOrderMapper;
 import edu.fjut.mall.order.mapper.SellerDashboardMapper;
+import edu.fjut.mall.order.mapper.AdminDashboardMapper;
 import edu.fjut.mall.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -46,6 +52,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderItemMapper orderItemMapper;
     private final SellerOrderMapper sellerOrderMapper;
     private final SellerDashboardMapper sellerDashboardMapper;
+    private final AdminDashboardMapper adminDashboardMapper;
     private final SnowflakeIdGenerator idGen;
     private final JdbcTemplate jdbcTemplate;
 
@@ -302,15 +309,51 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "无权操作该订单");
         }
         Order masterOrder = orderMapper.selectById(sellerOrder.getOrderId());
-        if (masterOrder == null || masterOrder.getStatus() != 1
-            || sellerOrderMapper.updateShipment(sellerOrderId, request.getShippingCompany(), request.getTrackingNo()) == 0) {
+        if (masterOrder == null || (masterOrder.getStatus() != 1 && masterOrder.getStatus() != 2
+            && masterOrder.getStatus() != 5)) {
             throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "仅已支付店铺订单可以发货");
         }
-
-        // 全部店铺均发货后，买家主订单才进入已发货状态。
-        if (sellerOrderMapper.countByOrderIdAndStatus(sellerOrder.getOrderId(), 1) == 0) {
-            orderMapper.updateStatus(sellerOrder.getOrderId(), 2);
+        List<OrderItem> sellerItems = orderItemMapper.selectBySellerOrderIdAndSellerId(sellerOrderId, sellerId);
+        List<ShipItemRequest> requested = request.getItems();
+        if (requested == null || requested.isEmpty()) {
+            requested = sellerItems.stream().map(item -> {
+                ShipItemRequest all = new ShipItemRequest();
+                all.setOrderItemId(item.getId());
+                all.setQuantity(item.getQuantity() - safe(item.getShippedQuantity()) - safe(item.getRefundedQuantity()));
+                return all;
+            }).filter(item -> item.getQuantity() > 0).toList();
         }
+        Map<Long, Integer> quantities = new LinkedHashMap<>();
+        for (ShipItemRequest item : requested) {
+            if (item.getOrderItemId() == null || item.getQuantity() == null || item.getQuantity() < 1
+                || quantities.put(item.getOrderItemId(), item.getQuantity()) != null) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "发货商品或数量不合法");
+            }
+        }
+        if (quantities.isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "没有可发货的商品");
+        }
+        Map<Long, OrderItem> itemMap = sellerItems.stream().collect(java.util.stream.Collectors.toMap(OrderItem::getId, item -> item));
+        if (quantities.size() != quantities.keySet().stream().filter(itemMap::containsKey).count()) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "发货商品不属于当前店铺订单");
+        }
+        for (Map.Entry<Long, Integer> entry : quantities.entrySet()) {
+            OrderItem item = itemMap.get(entry.getKey());
+            int remaining = item.getQuantity() - safe(item.getShippedQuantity()) - safe(item.getRefundedQuantity());
+            if (entry.getValue() > remaining) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "发货数量超过商品可发货数量");
+            }
+            int rows = jdbcTemplate.update(
+                "UPDATE order_item SET shipped_quantity = COALESCE(shipped_quantity, 0) + ?, "
+                    + "shipping_company = ?, tracking_no = ?, ship_time = NOW() "
+                    + "WHERE id = ? AND quantity - COALESCE(shipped_quantity, 0) - COALESCE(refunded_quantity, 0) >= ?",
+                entry.getValue(), request.getShippingCompany(), request.getTrackingNo(), entry.getKey(), entry.getValue());
+            if (rows == 0) throw new BusinessException(ResultCode.ORDER_STATUS_ERROR.getCode(), "商品发货状态已发生变化");
+        }
+        jdbcTemplate.update("UPDATE seller_order_t SET shipping_company = ?, tracking_no = ?, ship_time = NOW() WHERE id = ?",
+            request.getShippingCompany(), request.getTrackingNo(), sellerOrderId);
+        sellerOrderMapper.refreshStatus(sellerOrderId);
+        refreshMasterOrderStatus(sellerOrder.getOrderId());
         log.info("商家发货: sellerOrderId={}, sellerId={}, trackingNo={}",
             sellerOrderId, sellerId, request.getTrackingNo());
     }
@@ -335,6 +378,28 @@ public class OrderServiceImpl implements OrderService {
             return 10;
         }
         return Math.min(limit, 20);
+    }
+
+    @Override
+    public AdminDashboardOverviewVO getAdminDashboardOverview() {
+        return adminDashboardMapper.selectOverview();
+    }
+
+    @Override
+    public List<AdminDashboardTrendVO> getAdminDashboardOrderTrend(Integer days) {
+        int normalizedDays = days == null || days < 1 ? 7 : Math.min(days, 30);
+        LocalDateTime endTime = LocalDateTime.now();
+        return adminDashboardMapper.selectOrderTrend(endTime.minusDays(normalizedDays - 1L).toLocalDate().atStartOfDay(), endTime);
+    }
+
+    @Override
+    public List<AdminDashboardOrderVO> getAdminDashboardLatestOrders(Integer limit) {
+        return adminDashboardMapper.selectLatestOrders(normalizeDashboardLimit(limit));
+    }
+
+    @Override
+    public List<AdminDashboardStockAlertVO> getAdminDashboardStockAlerts(Integer limit) {
+        return adminDashboardMapper.selectStockAlerts(normalizeDashboardLimit(limit));
     }
 
     private String generateOrderNo() {
@@ -392,6 +457,25 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
+    private int safe(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private void refreshMasterOrderStatus(Long orderId) {
+        Integer remaining = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM order_item WHERE order_id = ? AND quantity > COALESCE(refunded_quantity, 0)", Integer.class, orderId);
+        Integer unshipped = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM order_item WHERE order_id = ? AND quantity > COALESCE(shipped_quantity, 0) + COALESCE(refunded_quantity, 0)", Integer.class, orderId);
+        if (remaining != null && remaining == 0) {
+            orderMapper.updateStatus(orderId, 4);
+        } else if (unshipped != null && unshipped == 0) {
+            orderMapper.updateStatus(orderId, 2);
+        } else if (jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM order_item WHERE order_id = ? AND COALESCE(shipped_quantity, 0) > 0", Integer.class, orderId) > 0) {
+            orderMapper.updateStatus(orderId, 5);
+        }
+    }
+
     private OrderVO toVO(Order o, List<OrderItem> items) {
         return OrderVO.builder()
             .id(o.getId()).orderNo(o.getOrderNo()).userId(o.getUserId())
@@ -404,8 +488,12 @@ public class OrderServiceImpl implements OrderService {
             .items(items.stream().map(i -> OrderItemVO.builder()
                 .id(i.getId()).spuId(i.getSpuId()).skuId(i.getSkuId())
                 .productName(i.getProductName()).productImage(i.getProductImage())
-                .price(i.getPrice()).quantity(i.getQuantity()).totalPrice(i.getTotalPrice())
-                .build()).toList())
+                 .price(i.getPrice()).quantity(i.getQuantity()).totalPrice(i.getTotalPrice())
+                 .shippedQuantity(safe(i.getShippedQuantity())).refundedQuantity(safe(i.getRefundedQuantity()))
+                 .availableShipQuantity(Math.max(0, i.getQuantity() - safe(i.getShippedQuantity()) - safe(i.getRefundedQuantity())))
+                 .availableRefundQuantity(Math.max(0, i.getQuantity() - safe(i.getShippedQuantity()) - safe(i.getRefundedQuantity())))
+                 .shippingCompany(i.getShippingCompany()).trackingNo(i.getTrackingNo()).shipTime(i.getShipTime())
+                 .build()).toList())
             .sellerOrders(sellerOrderMapper.selectByOrderId(o.getId()).stream().map(sellerOrder -> SellerShipmentVO.builder()
                 .sellerOrderId(sellerOrder.getId()).sellerId(sellerOrder.getSellerId())
                 .status(sellerOrder.getStatus()).shippingCompany(sellerOrder.getShippingCompany())
@@ -437,12 +525,16 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private SellerOrderVO attachSellerItems(SellerOrderVO sellerOrder, Long sellerId) {
-        List<OrderItem> items = orderItemMapper.selectByOrderIdAndSellerId(sellerOrder.getOrderId(), sellerId);
+        List<OrderItem> items = orderItemMapper.selectBySellerOrderIdAndSellerId(sellerOrder.getId(), sellerId);
         sellerOrder.setItems(items.stream().map(i -> OrderItemVO.builder()
                 .id(i.getId()).spuId(i.getSpuId()).skuId(i.getSkuId())
                 .productName(i.getProductName()).productImage(i.getProductImage())
-                .price(i.getPrice()).quantity(i.getQuantity()).totalPrice(i.getTotalPrice())
-                .build()).toList());
+                 .price(i.getPrice()).quantity(i.getQuantity()).totalPrice(i.getTotalPrice())
+                  .shippedQuantity(safe(i.getShippedQuantity())).refundedQuantity(safe(i.getRefundedQuantity()))
+                  .availableShipQuantity(Math.max(0, i.getQuantity() - safe(i.getShippedQuantity()) - safe(i.getRefundedQuantity())))
+                  .availableRefundQuantity(Math.max(0, i.getQuantity() - safe(i.getShippedQuantity()) - safe(i.getRefundedQuantity())))
+                 .shippingCompany(i.getShippingCompany()).trackingNo(i.getTrackingNo()).shipTime(i.getShipTime())
+                 .build()).toList());
         return sellerOrder;
     }
 }

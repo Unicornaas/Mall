@@ -15,6 +15,21 @@
         <result column="update_time" property="updateTime"/>
     </resultMap>
 
+    <resultMap id="RefundItemResultMap" type="edu.fjut.mall.payment.entity.PaymentRefundItem">
+        <id column="id" property="id"/>
+        <result column="refund_id" property="refundId"/>
+        <result column="order_item_id" property="orderItemId"/>
+        <result column="seller_order_id" property="sellerOrderId"/>
+        <result column="sku_id" property="skuId"/>
+        <result column="product_name" property="productName"/>
+        <result column="price" property="price"/>
+        <result column="quantity" property="quantity"/>
+        <result column="refund_amount" property="refundAmount"/>
+        <result column="item_status" property="itemStatus"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+    </resultMap>
+
     <insert id="insert">
         INSERT INTO payment_refund (id, order_no, user_id, refund_amount, refund_status, reason)
         VALUES (#{id}, #{orderNo}, #{userId}, #{refundAmount}, #{refundStatus}, #{reason})
@@ -29,6 +44,11 @@
         ORDER BY create_time DESC, id DESC LIMIT 1
     </select>
 
+    <select id="selectByOrderNo" resultMap="BaseResultMap">
+        SELECT * FROM payment_refund WHERE order_no = #{orderNo}
+        ORDER BY create_time DESC, id DESC
+    </select>
+
     <update id="updateStatus">
         UPDATE payment_refund SET refund_status = #{refundStatus} WHERE id = #{id}
     </update>
@@ -39,11 +59,6 @@
             process_remark = #{processRemark}, process_time = NOW()
         WHERE id = #{id} AND refund_status = 0
     </update>
-
-    <select id="countActiveByOrderNo" resultType="int">
-        SELECT COUNT(*) FROM payment_refund
-        WHERE order_no = #{orderNo} AND refund_status IN (0, 1)
-    </select>
 
     <sql id="AdminRefundWhere">
         <where>
@@ -67,4 +82,22 @@
         SELECT COUNT(*) FROM payment_refund
         <include refid="AdminRefundWhere"/>
     </select>
+
+    <insert id="insertItem">
+        INSERT INTO payment_refund_item
+        (id, refund_id, order_item_id, seller_order_id, sku_id, product_name,
+         price, quantity, refund_amount, item_status)
+        VALUES
+        (#{id}, #{refundId}, #{orderItemId}, #{sellerOrderId}, #{skuId}, #{productName},
+         #{price}, #{quantity}, #{refundAmount}, #{itemStatus})
+    </insert>
+
+    <select id="selectItemsByRefundId" resultMap="RefundItemResultMap">
+        SELECT * FROM payment_refund_item WHERE refund_id = #{refundId} ORDER BY id
+    </select>
+
+    <update id="updateItemStatus">
+        UPDATE payment_refund_item SET item_status = #{itemStatus}
+        WHERE refund_id = #{refundId}
+    </update>
 </mapper>
