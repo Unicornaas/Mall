@@ -36,7 +36,10 @@ public class CartServiceImpl implements CartService {
         Map<String, Object> sku;
         try {
             sku = jdbcTemplate.queryForMap(
-                "SELECT id, spu_id, name, price, images FROM product_sku WHERE id = ?", request.getSkuId());
+                "SELECT sku.id, sku.spu_id, sku.name, sku.price, "
+                    + "COALESCE(NULLIF(TRIM(sku.images), ''), NULLIF(TRIM(spu.main_image), ''), spu.images) AS images "
+                    + "FROM product_sku sku JOIN product_spu spu ON spu.id = sku.spu_id WHERE sku.id = ?",
+                request.getSkuId());
         } catch (Exception e) {
             throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "商品SKU不存在");
         }
@@ -74,7 +77,10 @@ public class CartServiceImpl implements CartService {
         for (Cart cart : carts) {
             try {
                 Map<String, Object> sku = jdbcTemplate.queryForMap(
-                    "SELECT id, spu_id, name, price, images FROM product_sku WHERE id = ?", cart.getSkuId());
+                    "SELECT sku.id, sku.spu_id, sku.name, sku.price, "
+                        + "COALESCE(NULLIF(TRIM(sku.images), ''), NULLIF(TRIM(spu.main_image), ''), spu.images) AS images "
+                        + "FROM product_sku sku JOIN product_spu spu ON spu.id = sku.spu_id WHERE sku.id = ?",
+                    cart.getSkuId());
                 vos.add(toVO(cart, sku));
             } catch (Exception e) {
                 log.warn("购物车中SKU {} 已失效，跳过", cart.getSkuId());
@@ -95,7 +101,10 @@ public class CartServiceImpl implements CartService {
         cart.setQuantity(quantity);
 
         Map<String, Object> sku = jdbcTemplate.queryForMap(
-            "SELECT id, spu_id, name, price, images FROM product_sku WHERE id = ?", cart.getSkuId());
+            "SELECT sku.id, sku.spu_id, sku.name, sku.price, "
+                + "COALESCE(NULLIF(TRIM(sku.images), ''), NULLIF(TRIM(spu.main_image), ''), spu.images) AS images "
+                + "FROM product_sku sku JOIN product_spu spu ON spu.id = sku.spu_id WHERE sku.id = ?",
+            cart.getSkuId());
         log.info("购物车数量修改: cartId={}, quantity={}", id, quantity);
         return toVO(cart, sku);
     }
@@ -112,7 +121,10 @@ public class CartServiceImpl implements CartService {
         cart.setSelected(selected);
 
         Map<String, Object> sku = jdbcTemplate.queryForMap(
-            "SELECT id, spu_id, name, price, images FROM product_sku WHERE id = ?", cart.getSkuId());
+            "SELECT sku.id, sku.spu_id, sku.name, sku.price, "
+                + "COALESCE(NULLIF(TRIM(sku.images), ''), NULLIF(TRIM(spu.main_image), ''), spu.images) AS images "
+                + "FROM product_sku sku JOIN product_spu spu ON spu.id = sku.spu_id WHERE sku.id = ?",
+            cart.getSkuId());
         log.info("购物车选中状态修改: cartId={}, selected={}", id, selected);
         return toVO(cart, sku);
     }
@@ -165,4 +177,3 @@ public class CartServiceImpl implements CartService {
             .build();
     }
 }
-

@@ -75,9 +75,12 @@
         >
           <!-- 图片区 -->
           <div class="card-image">
-            <div class="img-placeholder">
-              <el-icon :size="48"><Goods /></el-icon>
-            </div>
+            <el-image v-if="productImage(spu)" :src="productImage(spu)" :alt="spu.name" fit="cover" class="product-cover">
+              <template #error>
+                <div class="img-placeholder"><el-icon :size="48"><Goods /></el-icon></div>
+              </template>
+            </el-image>
+            <div v-else class="img-placeholder"><el-icon :size="48"><Goods /></el-icon></div>
             <span class="card-category-tag">{{ currentCatName }}</span>
             <span v-if="spu.status === 0" class="card-off-shelf">已下架</span>
           </div>
@@ -199,6 +202,10 @@ const formatPrice = (val) => {
   if (Number.isInteger(num)) return String(num)
   return num.toFixed(2)
 }
+
+const firstImage = (value) => String(value || '').split(/[\n,]/).map(item => item.trim()).find(Boolean) || ''
+// The catalog always uses the product's main image; SKU images belong to detail selection.
+const productImage = (spu) => firstImage(spu.mainImage)
 
 // ====== 方法 ======
 const fetchCategories = async () => {
@@ -528,6 +535,13 @@ onMounted(async () => {
   overflow: hidden;
 }
 
+.product-cover {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transition: transform 0.4s ease;
+}
+
 .img-placeholder {
   width: 100%;
   height: 100%;
@@ -539,7 +553,8 @@ onMounted(async () => {
   transition: transform 0.4s ease;
 }
 
-.product-card:hover .img-placeholder {
+.product-card:hover .img-placeholder,
+.product-card:hover .product-cover {
   transform: scale(1.04);
 }
 

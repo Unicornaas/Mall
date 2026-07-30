@@ -60,9 +60,10 @@
           <div v-for="item in order.items" :key="item.id" class="item-row">
             <div class="col-name">
               <div class="item-img">
-                <div class="img-placeholder">
-                  <el-icon :size="16"><Goods /></el-icon>
-                </div>
+                <el-image v-if="item.productImage" :src="item.productImage" :alt="item.productName" fit="cover" class="item-cover">
+                  <template #error><div class="img-placeholder"><el-icon :size="16"><Goods /></el-icon></div></template>
+                </el-image>
+                <div v-else class="img-placeholder"><el-icon :size="16"><Goods /></el-icon></div>
               </div>
               <span>{{ item.productName }}</span>
             </div>
@@ -359,7 +360,11 @@ onMounted(fetchDetail)
 .item-img {
   width: 40px; height: 40px;
   flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 6px;
 }
+
+.item-cover { width: 100%; height: 100%; display: block; }
 
 .img-placeholder {
   width: 100%; height: 100%;

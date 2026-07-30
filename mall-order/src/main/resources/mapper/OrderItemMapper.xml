@@ -25,13 +25,39 @@
             (#{item.id}, #{item.orderId}, #{item.sellerId}, #{item.sellerOrderId}, #{item.spuId}, #{item.skuId}, #{item.productName}, #{item.productImage}, #{item.price}, #{item.quantity}, #{item.totalPrice})
         </foreach>
     </insert>
-    <select id="selectByOrderId" resultMap="BaseResultMap">SELECT * FROM order_item WHERE order_id = #{orderId}</select>
+    <sql id="BuyerImageColumn">
+        COALESCE(NULLIF(TRIM(oi.product_image), ''), NULLIF(TRIM(sku.images), ''),
+                 NULLIF(TRIM(spu.main_image), ''), spu.images) AS product_image
+    </sql>
+    <select id="selectByOrderId" resultMap="BaseResultMap">
+        SELECT oi.id, oi.order_id, oi.seller_id, oi.seller_order_id, oi.spu_id, oi.sku_id,
+               oi.product_name, <include refid="BuyerImageColumn"/>, oi.price, oi.quantity,
+               oi.shipped_quantity, oi.refunded_quantity, oi.shipping_company, oi.tracking_no,
+               oi.ship_time, oi.total_price
+        FROM order_item oi
+        LEFT JOIN product_sku sku ON sku.id = oi.sku_id
+        LEFT JOIN product_spu spu ON spu.id = oi.spu_id
+        WHERE oi.order_id = #{orderId}
+    </select>
     <select id="selectByOrderIdAndSellerId" resultMap="BaseResultMap">
-        SELECT * FROM order_item WHERE order_id = #{orderId} AND seller_id = #{sellerId}
+        SELECT oi.id, oi.order_id, oi.seller_id, oi.seller_order_id, oi.spu_id, oi.sku_id,
+               oi.product_name, <include refid="BuyerImageColumn"/>, oi.price, oi.quantity,
+               oi.shipped_quantity, oi.refunded_quantity, oi.shipping_company, oi.tracking_no,
+               oi.ship_time, oi.total_price
+        FROM order_item oi
+        LEFT JOIN product_sku sku ON sku.id = oi.sku_id
+        LEFT JOIN product_spu spu ON spu.id = oi.spu_id
+        WHERE oi.order_id = #{orderId} AND oi.seller_id = #{sellerId}
     </select>
     <select id="selectBySellerOrderIdAndSellerId" resultMap="BaseResultMap">
-        SELECT * FROM order_item
-        WHERE seller_order_id = #{sellerOrderId} AND seller_id = #{sellerId}
-        ORDER BY id
+        SELECT oi.id, oi.order_id, oi.seller_id, oi.seller_order_id, oi.spu_id, oi.sku_id,
+               oi.product_name, <include refid="BuyerImageColumn"/>, oi.price, oi.quantity,
+               oi.shipped_quantity, oi.refunded_quantity, oi.shipping_company, oi.tracking_no,
+               oi.ship_time, oi.total_price
+        FROM order_item oi
+        LEFT JOIN product_sku sku ON sku.id = oi.sku_id
+        LEFT JOIN product_spu spu ON spu.id = oi.spu_id
+        WHERE oi.seller_order_id = #{sellerOrderId} AND oi.seller_id = #{sellerId}
+        ORDER BY oi.id
     </select>
 </mapper>

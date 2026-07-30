@@ -41,9 +41,10 @@
 
           <!-- 商品图片 -->
           <div class="item-image">
-            <div class="img-placeholder">
-              <el-icon :size="28"><Goods /></el-icon>
-            </div>
+            <el-image v-if="item.productImage" :src="item.productImage" :alt="item.productName" fit="cover" class="item-cover">
+              <template #error><div class="img-placeholder"><el-icon :size="28"><Goods /></el-icon></div></template>
+            </el-image>
+            <div v-else class="img-placeholder"><el-icon :size="28"><Goods /></el-icon></div>
           </div>
 
           <!-- 商品信息 -->
@@ -349,6 +350,8 @@ onMounted(fetchCart)
   height: 72px;
   flex-shrink: 0;
 }
+
+.item-cover { width: 100%; height: 100%; display: block; }
 
 .img-placeholder {
   width: 100%;

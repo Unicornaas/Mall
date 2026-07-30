@@ -65,7 +65,9 @@ public class OrderServiceImpl implements OrderService {
 
         for (var itemReq : request.getItems()) {
             List<Map<String, Object>> skuRows = jdbcTemplate.queryForList(
-                "SELECT sku.id AS sku_id, sku.spu_id, sku.name, sku.price, sku.images, spu.seller_id "
+                "SELECT sku.id AS sku_id, sku.spu_id, sku.name, sku.price, "
+                    + "COALESCE(NULLIF(TRIM(sku.images), ''), NULLIF(TRIM(spu.main_image), ''), spu.images) AS images, "
+                    + "spu.seller_id "
                     + "FROM product_sku sku JOIN product_spu spu ON spu.id = sku.spu_id "
                     + "WHERE sku.id = ?",
                 itemReq.getSkuId());

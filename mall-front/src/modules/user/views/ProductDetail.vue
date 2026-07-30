@@ -10,10 +10,12 @@
       <!-- 左侧图片 -->
       <div class="detail-gallery">
         <div class="gallery-main">
-          <div class="img-placeholder">
-            <el-icon :size="64"><Goods /></el-icon>
-            <span v-if="spu.brand" class="img-brand">{{ spu.brand }}</span>
-          </div>
+          <el-image v-if="currentImage" :src="currentImage" :alt="spu.name" fit="contain" class="product-main-image">
+            <template #error>
+              <div class="img-placeholder"><el-icon :size="64"><Goods /></el-icon><span v-if="spu.brand" class="img-brand">{{ spu.brand }}</span></div>
+            </template>
+          </el-image>
+          <div v-else class="img-placeholder"><el-icon :size="64"><Goods /></el-icon><span v-if="spu.brand" class="img-brand">{{ spu.brand }}</span></div>
         </div>
       </div>
 
@@ -114,6 +116,10 @@ const skus = ref([])
 const selectedSku = ref(null)
 const quantity = ref(1)
 const inventoryMap = ref({})
+
+const firstImage = (value) => String(value || '').split(/[\n,]/).map(item => item.trim()).find(Boolean) || ''
+// A selected SKU image takes precedence; the product main image is the fallback.
+const currentImage = computed(() => firstImage(selectedSku.value?.images) || firstImage(spu.value?.mainImage) || firstImage(spu.value?.images))
 
 const currentStock = computed(() => {
   if (!selectedSku.value) return 0
@@ -219,6 +225,13 @@ onMounted(fetchDetail)
   height: 440px;
   border-radius: 14px;
   overflow: hidden;
+}
+
+.product-main-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #fff;
 }
 
 .img-placeholder {
